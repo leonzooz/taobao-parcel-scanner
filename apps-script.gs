@@ -208,6 +208,78 @@ function processPendingOcr() {
   }
 }
 
+function processPendingProductImages() {
+  var sheet = getDataSheet_();
+  ensureHeaders_(sheet);
+
+  var lastRow = sheet.getLastRow();
+
+  if (lastRow < 2) {
+    return;
+  }
+
+  var values = sheet.getRange(2, 1, lastRow - 1, 20).getValues();
+  var processedCount = 0;
+
+  for (var i = 0; i < values.length; i++) {
+    var rowNumber = i + 2;
+    var row = values[i];
+    var productUrl = row[5] || "";
+    var productName = row[2] || "";
+    var productImageUrl = row[16] || "";
+    var productImageFileId = row[17] || "";
+    var imageStatus = row[18] || "";
+
+    if (!productUrl || (productImageUrl && productImageFileId) || imageStatus === "已抓圖") {
+      continue;
+    }
+
+    if (imageStatus && imageStatus !== "待抓圖" && imageStatus !== "抓圖失敗") {
+      continue;
+    }
+
+    try {
+      sheet.getRange(rowNumber, 19).setValue("抓圖中");
+      SpreadsheetApp.flush();
+
+      var imageUrl = findProductImageUrl_(productUrl);
+
+      if (!imageUrl) {
+        sheet.getRange(rowNumber, 19).setValue("抓圖失敗");
+        sheet.getRange(rowNumber, 20).setValue("整理中");
+        continue;
+      }
+
+      var savedImage = saveProductImage_(imageUrl, productUrl);
+
+      sheet.getRange(rowNumber, 17).setValue(savedImage.url || imageUrl);
+      sheet.getRange(rowNumber, 18).setValue(savedImage.fileId || "");
+      sheet.getRange(rowNumber, 19).setValue("已抓圖");
+
+      if (productName) {
+        sheet.getRange(rowNumber, 20).setValue("可展示");
+      } else {
+        sheet.getRange(rowNumber, 20).setValue("整理中");
+      }
+
+      processedCount++;
+
+      if (processedCount >= 10) {
+        break;
+      }
+
+    } catch (error) {
+      sheet.getRange(rowNumber, 19).setValue("抓圖失敗");
+      sheet.getRange(rowNumber, 20).setValue("整理中");
+    }
+  }
+}
+
+function processAllPending() {
+  processPendingOcr();
+  processPendingProductImages();
+}
+
 function runDriveOcr_(photoFileId) {
   var sourceFile = DriveApp.getFileById(photoFileId);
   var resource = {
@@ -226,6 +298,92 @@ function runDriveOcr_(photoFileId) {
   DriveApp.getFileById(ocrFile.id).setTrashed(true);
 
   return text || sourceFile.getName();
+}
+
+function findProductImageUrl_(productUrl) {
+  var html = fetchProductHtml_(productUrl);
+
+  if (!html) {
+    return "";
+  }
+
+  html = decodeHtml_(html);
+
+  var imageUrl = firstMatch_(html, /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i);
+
+  if (!imageUrl) {
+    imageUrl = firstMatch_(html, /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+  }
+
+  if (!imageUrl) {
+    imageUrl = firstMatch_(html, /"picUrl"\s*:\s*"([^"]+)"/i);
+  }
+
+  if (!imageUrl) {
+    imageUrl = firstMatch_(html, /"mainPic"\s*:\s*"([^"]+)"/i);
+  }
+
+  if (!imageUrl) {
+    imageUrl = firstMatch_(html, /(\/\/img\.alicdn\.com\/[^"'\s<>\\]+?\.(?:jpg|jpeg|png|webp))/i);
+  }
+
+  return normalizeImageUrl_(imageUrl);
+}
+
+function fetchProductHtml_(productUrl) {
+  var response = UrlFetchApp.fetch(productUrl, {
+    muteHttpExceptions: true,
+    followRedirects: true,
+    headers: {
+      "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "zh-TW,zh-CN;q=0.9,en;q=0.6"
+    }
+  });
+
+  var code = response.getResponseCode();
+
+  if (code < 200 || code >= 400) {
+    return "";
+  }
+
+  return response.getContentText();
+}
+
+function saveProductImage_(imageUrl, productUrl) {
+  var normalizedUrl = normalizeImageUrl_(imageUrl);
+
+  if (!normalizedUrl) {
+    return { url: "", fileId: "" };
+  }
+
+  var response = UrlFetchApp.fetch(normalizedUrl, {
+    muteHttpExceptions: true,
+    followRedirects: true,
+    headers: {
+      "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+      "Referer": "https://item.taobao.com/"
+    }
+  });
+
+  var code = response.getResponseCode();
+
+  if (code < 200 || code >= 400) {
+    return { url: normalizedUrl, fileId: "" };
+  }
+
+  var folders = DriveApp.getFoldersByName("TaobaoProductImages");
+  var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("TaobaoProductImages");
+  var blob = response.getBlob();
+  var fileName = "product-" + extractItemId_(productUrl) + "-" + new Date().getTime() + ".jpg";
+  var file = folder.createFile(blob.setName(fileName));
+
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+  return {
+    url: driveImageUrl_(file.getId()),
+    fileId: file.getId()
+  };
 }
 
 function parseLabelText_(rawText) {
@@ -411,6 +569,46 @@ function normalizeUrl_(url) {
     .replace(/#.*$/, "")
     .replace(/&?spm=[^&]*/g, "")
     .replace(/&?ut_sk=[^&]*/g, "");
+}
+
+function normalizeImageUrl_(url) {
+  url = String(url || "")
+    .replace(/\\u002F/g, "/")
+    .replace(/\\\//g, "/")
+    .replace(/&amp;/g, "&")
+    .trim();
+
+  if (!url) {
+    return "";
+  }
+
+  if (url.indexOf("//") === 0) {
+    url = "https:" + url;
+  }
+
+  if (url.indexOf("http://") === 0) {
+    url = "https://" + url.substring(7);
+  }
+
+  return url;
+}
+
+function decodeHtml_(text) {
+  return String(text || "")
+    .replace(/&quot;/g, '"')
+    .replace(/&#34;/g, '"')
+    .replace(/&#x2F;/g, "/")
+    .replace(/&amp;/g, "&");
+}
+
+function extractItemId_(url) {
+  var id = firstMatch_(url, /[?&]id=([0-9]+)/);
+
+  if (!id) {
+    id = new Date().getTime();
+  }
+
+  return id;
 }
 
 function driveImageUrl_(fileId) {
