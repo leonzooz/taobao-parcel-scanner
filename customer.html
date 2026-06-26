@@ -164,8 +164,8 @@
 
     .product-preview {
       display: grid;
-      place-items: center;
-      min-height: 220px;
+      gap: 10px;
+      min-height: 180px;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: #02060a;
@@ -174,6 +174,49 @@
       line-height: 1.45;
       padding: 14px;
       text-align: center;
+    }
+
+    .product-image {
+      width: 100%;
+      max-height: 330px;
+      object-fit: contain;
+      border-radius: 8px;
+      background: #05080c;
+    }
+
+    .product-title {
+      color: var(--text);
+      font-size: 18px;
+      font-weight: 800;
+      line-height: 1.35;
+      text-align: left;
+    }
+
+    .product-meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      text-align: left;
+    }
+
+    .meta-box {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel2);
+      padding: 10px;
+    }
+
+    .meta-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .meta-value {
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 700;
+      word-break: break-word;
     }
 
     button,
@@ -265,6 +308,8 @@
   <canvas id="work-canvas" class="hidden"></canvas>
 
   <script>
+    const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzWWBupdwuar1EvO0qsXAehBawmt_TQk7faI9mYaNdBT6bWwFxqiEOJD5xwWWLVikWy/exec";
+
     const cameraCard = document.getElementById("camera-card");
     const camera = document.getElementById("camera");
     const mode = document.getElementById("mode");
@@ -449,7 +494,97 @@
       openLink.href = url;
       resultUrl.value = url;
       resultPanel.classList.remove("hidden");
-      showMessage("已掃到淘寶商品連結，請按按鈕打開商品頁。", "ok");
+      showMessage("已掃到淘寶商品連結，正在查詢商品資料。", "ok");
+      renderLoading();
+      lookupProduct(url);
+    }
+
+    function renderLoading() {
+      document.getElementById("product-preview").innerHTML = "正在查詢商品資料...";
+    }
+
+    function lookupProduct(url) {
+      const callbackName = "lookupCallback_" + Date.now();
+      const script = document.createElement("script");
+
+      window[callbackName] = function(data) {
+        delete window[callbackName];
+        script.remove();
+        renderProduct(data, url);
+      };
+
+      script.onerror = function() {
+        delete window[callbackName];
+        script.remove();
+        renderLookupError(url);
+      };
+
+      script.src = APPS_SCRIPT_URL +
+        "?action=lookup" +
+        "&callback=" + encodeURIComponent(callbackName) +
+        "&productUrl=" + encodeURIComponent(url);
+
+      document.body.appendChild(script);
+    }
+
+    function renderProduct(data, fallbackUrl) {
+      const preview = document.getElementById("product-preview");
+
+      if (!data || data.status === "error") {
+        renderLookupError(fallbackUrl, data && data.message ? data.message : "");
+        return;
+      }
+
+      if (!data.found || data.customerDisplayStatus !== "可展示") {
+        preview.innerHTML =
+          "<div class=\"product-title\">商品資料整理中</div>" +
+          "<div>我們已取得商品連結，但商品圖片、名稱或價格尚未整理完成。</div>";
+        showMessage("商品資料整理中，可先用下方按鈕打開商品頁。", "warn");
+        return;
+      }
+
+      const imageHtml = data.productImageUrl
+        ? "<img class=\"product-image\" src=\"" + escapeAttr(data.productImageUrl) + "\" alt=\"商品圖片\">"
+        : "<div>尚無商品圖片</div>";
+
+      preview.innerHTML =
+        imageHtml +
+        "<div class=\"product-title\">" + escapeHtml(data.productName || "商品") + "</div>" +
+        "<div class=\"product-meta\">" +
+          metaBox("價格", data.originalPrice || data.suggestedPrice || "未整理") +
+          metaBox("規格", data.spec || "未整理") +
+          metaBox("品類", data.category || "未整理") +
+          metaBox("狀態", data.itemStatus || "未整理") +
+        "</div>";
+
+      showMessage("已找到商品資料。", "ok");
+    }
+
+    function renderLookupError(url, messageText) {
+      document.getElementById("product-preview").innerHTML =
+        "<div class=\"product-title\">暫時查不到商品資料</div>" +
+        "<div>" + escapeHtml(messageText || "請稍後再試，或用下方按鈕打開商品頁。") + "</div>";
+      showMessage("查詢商品資料失敗，可先打開商品頁。", "warn");
+    }
+
+    function metaBox(label, value) {
+      return "<div class=\"meta-box\">" +
+        "<div class=\"meta-label\">" + escapeHtml(label) + "</div>" +
+        "<div class=\"meta-value\">" + escapeHtml(value) + "</div>" +
+      "</div>";
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value);
     }
 
     function resetScan() {
