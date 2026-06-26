@@ -5,10 +5,24 @@ function doGet(e) {
     return lookupProduct_(params);
   }
 
+  if (params.action === "pendingProductImages") {
+    return pendingProductImages_(params);
+  }
+
   return ContentService.createTextOutput("success");
 }
 
 function doPost(e) {
+  var params = e && e.parameter ? e.parameter : {};
+
+  if (params.mode === "productImage") {
+    return handleProductImageUpload_(params);
+  }
+
+  if (params.mode === "productImageError") {
+    return handleProductImageError_(params);
+  }
+
   return handleUpload_(e);
 }
 
@@ -149,6 +163,161 @@ function lookupProduct_(params) {
     return jsonOutput_({
       status: "error",
       found: false,
+      message: error.toString()
+    }, params.callback || "");
+  }
+}
+
+function pendingProductImages_(params) {
+  try {
+    var callback = params.callback || "";
+    var limit = Number(params.limit || 20);
+    var sheet = getDataSheet_();
+    ensureHeaders_(sheet);
+
+    var lastRow = sheet.getLastRow();
+    var items = [];
+
+    if (lastRow < 2) {
+      return jsonOutput_({ status: "success", items: items }, callback);
+    }
+
+    var values = sheet.getRange(2, 1, lastRow - 1, 20).getValues();
+
+    for (var i = 0; i < values.length; i++) {
+      var row = values[i];
+      var productUrl = row[5] || "";
+      var productImageUrl = row[16] || "";
+      var productImageFileId = row[17] || "";
+      var imageStatus = row[18] || "";
+
+      if (!productUrl || imageStatus === "已抓圖" || (productImageUrl && productImageFileId)) {
+        continue;
+      }
+
+      if (imageStatus && imageStatus !== "待抓圖" && imageStatus !== "抓圖失敗") {
+        continue;
+      }
+
+      items.push({
+        rowNumber: i + 2,
+        productUrl: productUrl,
+        productName: row[2] || "",
+        spec: row[3] || "",
+        category: row[4] || "",
+        originalPrice: row[6] || "",
+        imageStatus: imageStatus || "待抓圖"
+      });
+
+      if (items.length >= limit) {
+        break;
+      }
+    }
+
+    return jsonOutput_({ status: "success", items: items }, callback);
+
+  } catch (error) {
+    return jsonOutput_({
+      status: "error",
+      message: error.toString(),
+      items: []
+    }, params.callback || "");
+  }
+}
+
+function handleProductImageUpload_(params) {
+  try {
+    var rowNumber = Number(params.rowNumber || 0);
+    var productUrl = params.productUrl || "";
+    var imageName = params.imageName || ("product-" + new Date().getTime() + ".jpg");
+    var imageData = params.imageData || "";
+    var imageSourceUrl = params.imageSourceUrl || "";
+
+    if (!rowNumber || !productUrl || !imageData) {
+      throw new Error("缺少 rowNumber、productUrl 或 imageData");
+    }
+
+    var sheet = getDataSheet_();
+    ensureHeaders_(sheet);
+
+    var rowProductUrl = sheet.getRange(rowNumber, 6).getValue();
+
+    if (normalizeUrl_(rowProductUrl) !== normalizeUrl_(productUrl)) {
+      throw new Error("商品連結不一致，停止回填");
+    }
+
+    var base64 = imageData;
+
+    if (base64.indexOf(",") !== -1) {
+      base64 = base64.split(",")[1];
+    }
+
+    var contentType = params.contentType || "image/jpeg";
+    var folders = DriveApp.getFoldersByName("TaobaoProductImages");
+    var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("TaobaoProductImages");
+    var decodedData = Utilities.base64Decode(base64);
+    var blob = Utilities.newBlob(decodedData, contentType, imageName);
+    var file = folder.createFile(blob);
+
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+    var fileId = file.getId();
+    var photoUrl = driveImageUrl_(fileId);
+    var productName = sheet.getRange(rowNumber, 3).getValue();
+
+    sheet.getRange(rowNumber, 17).setValue(photoUrl);
+    sheet.getRange(rowNumber, 18).setValue(fileId);
+    sheet.getRange(rowNumber, 19).setValue("已抓圖");
+    sheet.getRange(rowNumber, 20).setValue(productName ? "可展示" : "整理中");
+
+    return jsonOutput_({
+      status: "success",
+      rowNumber: rowNumber,
+      productUrl: productUrl,
+      imageSourceUrl: imageSourceUrl,
+      productImageUrl: photoUrl,
+      productImageFileId: fileId
+    }, params.callback || "");
+
+  } catch (error) {
+    return jsonOutput_({
+      status: "error",
+      message: error.toString()
+    }, params.callback || "");
+  }
+}
+
+function handleProductImageError_(params) {
+  try {
+    var rowNumber = Number(params.rowNumber || 0);
+    var productUrl = params.productUrl || "";
+    var message = params.message || "PC抓圖失敗";
+
+    if (!rowNumber || !productUrl) {
+      throw new Error("缺少 rowNumber 或 productUrl");
+    }
+
+    var sheet = getDataSheet_();
+    ensureHeaders_(sheet);
+
+    var rowProductUrl = sheet.getRange(rowNumber, 6).getValue();
+
+    if (normalizeUrl_(rowProductUrl) !== normalizeUrl_(productUrl)) {
+      throw new Error("商品連結不一致，停止回填錯誤狀態");
+    }
+
+    sheet.getRange(rowNumber, 19).setValue("抓圖失敗");
+    sheet.getRange(rowNumber, 20).setValue("整理中");
+
+    return jsonOutput_({
+      status: "success",
+      rowNumber: rowNumber,
+      message: message
+    }, params.callback || "");
+
+  } catch (error) {
+    return jsonOutput_({
+      status: "error",
       message: error.toString()
     }, params.callback || "");
   }

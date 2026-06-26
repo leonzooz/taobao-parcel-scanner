@@ -1,0 +1,12 @@
+{
+  "name": "taobao-parcel-scanner-tools",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "fetch-images": "node pc-fetch-product-images.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.54.0"
+  }
+}
