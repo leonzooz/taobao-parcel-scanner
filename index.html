@@ -88,6 +88,32 @@
       pointer-events: none;
     }
 
+    .review-preview {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #02060a;
+      z-index: 4;
+    }
+
+    .camera-action,
+    .review-actions {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      z-index: 5;
+      pointer-events: auto;
+    }
+
+    .review-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
     .scan-mask {
       position: absolute;
       left: 0;
@@ -143,6 +169,11 @@
       font-size: 14px;
       line-height: 1.45;
       pointer-events: none;
+    }
+
+    .photo-ui .guide {
+      top: 12px;
+      bottom: auto;
     }
 
     .message {
@@ -240,15 +271,6 @@
       font-weight: 650;
     }
 
-    .preview {
-      width: 100%;
-      max-height: 36vh;
-      object-fit: contain;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #02060a;
-    }
-
     @media (max-width: 390px) {
       .app {
         padding: 8px;
@@ -285,6 +307,17 @@
       <div id="photo-ui" class="photo-ui hidden">
         <div class="guide">請把整張標籤放進畫面，按下方按鈕拍照並上傳。</div>
       </div>
+
+      <img id="preview" class="review-preview hidden" alt="標籤照片預覽" />
+
+      <div id="camera-action" class="camera-action hidden">
+        <button id="capture-btn" type="button">拍標籤照</button>
+      </div>
+
+      <div id="review-actions" class="review-actions hidden">
+        <button id="retake-btn" class="secondary" type="button">重拍</button>
+        <button id="upload-btn" type="button">確定上傳</button>
+      </div>
     </section>
 
     <div id="message" class="message">正在啟動相機...</div>
@@ -294,8 +327,6 @@
     </div>
 
     <section id="photo-panel" class="photo-panel hidden">
-      <button id="capture-btn" type="button">拍標籤照</button>
-
       <label>
         商品連結
         <textarea id="product-url" readonly></textarea>
@@ -310,11 +341,7 @@
         </select>
       </label>
 
-      <img id="preview" class="preview hidden" alt="標籤照片預覽" />
-
       <div class="controls">
-        <button id="upload-btn" type="button" class="hidden">確定上傳</button>
-        <button id="retake-btn" class="secondary hidden" type="button">重拍</button>
         <button id="rescan-btn" class="secondary" type="button">重掃 QR</button>
         <button id="retry-camera-btn" class="secondary" type="button">重開相機</button>
       </div>
@@ -333,6 +360,8 @@
     const photoUi = document.getElementById("photo-ui");
     const message = document.getElementById("message");
     const scanControls = document.getElementById("scan-controls");
+    const cameraAction = document.getElementById("camera-action");
+    const reviewActions = document.getElementById("review-actions");
     const startBtn = document.getElementById("start-btn");
     const photoPanel = document.getElementById("photo-panel");
     const productUrl = document.getElementById("product-url");
@@ -440,6 +469,8 @@
       photoUi.classList.toggle("hidden", nextMode !== "photo");
       scanControls.classList.toggle("hidden", nextMode !== "scan");
       photoPanel.classList.toggle("hidden", nextMode !== "photo");
+      cameraAction.classList.toggle("hidden", nextMode !== "photo");
+      reviewActions.classList.add("hidden");
 
       if (nextMode === "scan") {
         startScanLoop();
