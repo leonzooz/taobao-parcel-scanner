@@ -294,7 +294,7 @@
     </div>
 
     <section id="photo-panel" class="photo-panel hidden">
-      <button id="capture-btn" type="button">拍標籤並上傳</button>
+      <button id="capture-btn" type="button">拍標籤照</button>
 
       <label>
         商品連結
@@ -313,6 +313,8 @@
       <img id="preview" class="preview hidden" alt="標籤照片預覽" />
 
       <div class="controls">
+        <button id="upload-btn" type="button" class="hidden">確定上傳</button>
+        <button id="retake-btn" class="secondary hidden" type="button">重拍</button>
         <button id="rescan-btn" class="secondary" type="button">重掃 QR</button>
         <button id="retry-camera-btn" class="secondary" type="button">重開相機</button>
       </div>
@@ -336,6 +338,8 @@
     const productUrl = document.getElementById("product-url");
     const statusInput = document.getElementById("status");
     const captureBtn = document.getElementById("capture-btn");
+    const uploadBtn = document.getElementById("upload-btn");
+    const retakeBtn = document.getElementById("retake-btn");
     const rescanBtn = document.getElementById("rescan-btn");
     const retryCameraBtn = document.getElementById("retry-camera-btn");
     const preview = document.getElementById("preview");
@@ -353,6 +357,8 @@
 
     startBtn.addEventListener("click", startCamera);
     captureBtn.addEventListener("click", captureAndUpload);
+    uploadBtn.addEventListener("click", submitData);
+    retakeBtn.addEventListener("click", retakePhoto);
     rescanBtn.addEventListener("click", resetToScan);
     retryCameraBtn.addEventListener("click", startCamera);
 
@@ -531,6 +537,11 @@
       photoName = "";
       preview.src = "";
       preview.classList.add("hidden");
+      captureBtn.classList.remove("hidden");
+      uploadBtn.classList.add("hidden");
+      retakeBtn.classList.add("hidden");
+      rescanBtn.classList.remove("hidden");
+      retryCameraBtn.classList.remove("hidden");
 
       setMode("photo");
       showMessage("已取得淘寶連結，請拍整張標籤", "ok");
@@ -544,7 +555,7 @@
       };
     }
 
-    async function captureAndUpload() {
+    function captureAndUpload() {
       if (isUploading) return;
 
       if (!camera.videoWidth || !camera.videoHeight) {
@@ -579,12 +590,36 @@
       preview.src = photoData;
       preview.classList.remove("hidden");
 
-      await submitData();
+      stopStream();
+      captureBtn.classList.add("hidden");
+      uploadBtn.classList.remove("hidden");
+      retakeBtn.classList.remove("hidden");
+      rescanBtn.classList.add("hidden");
+      retryCameraBtn.classList.add("hidden");
+      showMessage("請確認照片清楚，再按確定上傳", "ok");
+    }
+
+    async function retakePhoto() {
+      if (isUploading) return;
+
+      photoData = "";
+      photoName = "";
+      preview.src = "";
+      preview.classList.add("hidden");
+      captureBtn.classList.remove("hidden");
+      uploadBtn.classList.add("hidden");
+      retakeBtn.classList.add("hidden");
+      rescanBtn.classList.remove("hidden");
+      retryCameraBtn.classList.remove("hidden");
+      showMessage("請把整張標籤放進畫面後拍照", "");
+      await startCamera();
     }
 
     async function submitData() {
       isUploading = true;
       captureBtn.disabled = true;
+      uploadBtn.disabled = true;
+      retakeBtn.disabled = true;
       showMessage("正在上傳...", "");
 
       const now = new Date();
@@ -622,6 +657,8 @@
         } else {
           isUploading = false;
           captureBtn.disabled = false;
+          uploadBtn.disabled = false;
+          retakeBtn.disabled = false;
           showMessage("上傳可能失敗：" + text, "bad");
         }
       } catch (error) {
@@ -639,6 +676,8 @@
           console.error(error2);
           isUploading = false;
           captureBtn.disabled = false;
+          uploadBtn.disabled = false;
+          retakeBtn.disabled = false;
           showMessage("上傳出錯：" + error2.message, "bad");
         }
       }
@@ -647,11 +686,18 @@
     function resetToScan() {
       isUploading = false;
       captureBtn.disabled = false;
+      uploadBtn.disabled = false;
+      retakeBtn.disabled = false;
       productUrl.value = "";
       photoData = "";
       photoName = "";
       preview.src = "";
       preview.classList.add("hidden");
+      captureBtn.classList.remove("hidden");
+      uploadBtn.classList.add("hidden");
+      retakeBtn.classList.add("hidden");
+      rescanBtn.classList.remove("hidden");
+      retryCameraBtn.classList.remove("hidden");
       setMode("scan");
       updateScanBox();
       showMessage("請把左下角淘寶 QR 放進白框", "");
