@@ -146,15 +146,49 @@ async function findBestImageUrl(page) {
       urls.push({ url, score, source: source || "" });
     }
 
+    function isInTopGallery(element) {
+      const rect = element.getBoundingClientRect();
+
+      if (rect.top > window.innerHeight * 0.95) return false;
+      if (rect.left > window.innerWidth * 0.62) return false;
+
+      const path = [];
+      let node = element;
+
+      while (node && node !== document.body) {
+        const name = [
+          node.id || "",
+          node.className || "",
+          node.getAttribute?.("data-spm") || "",
+          node.getAttribute?.("role") || ""
+        ].join(" ");
+
+        path.push(name);
+        node = node.parentElement;
+      }
+
+      const joinedPath = path.join(" ");
+
+      if (/detail|desc|content|review|comment|recommend|shop|evaluate|图文|詳情|详情|评价|推薦|推荐/i.test(joinedPath)) {
+        return false;
+      }
+
+      if (/slider|swiper|slick|carousel|gallery|album|thumb|mainPic|main-pic|preview|pic|image|magnifier/i.test(joinedPath)) {
+        return true;
+      }
+
+      return rect.left < window.innerWidth * 0.55 && rect.width >= 120 && rect.height >= 120;
+    }
+
     for (const meta of document.querySelectorAll("meta[property='og:image'], meta[name='og:image'], meta[name='twitter:image']")) {
-      add(meta.getAttribute("content"), 5000, "meta");
+      add(meta.getAttribute("content"), 1800, "meta");
     }
 
     for (const script of document.querySelectorAll("script[type='application/ld+json']")) {
       try {
         const data = JSON.parse(script.textContent || "{}");
         const image = Array.isArray(data.image) ? data.image[0] : data.image;
-        add(image, 4800, "jsonld");
+        add(image, 1600, "jsonld");
       } catch (error) {}
     }
 
@@ -174,7 +208,7 @@ async function findBestImageUrl(page) {
       var match;
 
       while ((match = regex.exec(scriptText))) {
-        add(match[1], 4500, "script-data");
+        add(match[1], 2500, "script-data");
       }
     }
 
@@ -193,11 +227,18 @@ async function findBestImageUrl(page) {
       const ratio = rect.height ? rect.width / rect.height : 0;
       const alt = img.alt || "";
       const parentText = img.closest("a, div, li, section")?.textContent || "";
+      const inTopGallery = isInTopGallery(img);
 
-      if (src && src.includes("img.alicdn.com")) score += 500;
-      if (rect.width >= 260 && rect.height >= 260) score += 600;
-      if (ratio >= 0.72 && ratio <= 1.38) score += 600;
-      if (rect.top >= -150 && rect.top <= window.innerHeight * 0.9) score += 500;
+      if (!inTopGallery) {
+        continue;
+      }
+
+      score += 5000;
+      if (src && src.includes("img.alicdn.com")) score += 800;
+      if (rect.width >= 260 && rect.height >= 260) score += 900;
+      if (ratio >= 0.72 && ratio <= 1.38) score += 800;
+      if (rect.top >= -150 && rect.top <= window.innerHeight * 0.9) score += 800;
+      if (rect.left < window.innerWidth * 0.52) score += 700;
       if (/主图|商品|product|item/i.test(alt)) score += 180;
       if (/你可能|广告|廣告|详情|詳情|推荐|推薦|涂层|豆浆|活动|活動/.test(parentText + " " + alt + " " + src)) score -= 1800;
       if (ratio > 1.65 || ratio < 0.55) score -= 1200;
