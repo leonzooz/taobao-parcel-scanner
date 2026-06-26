@@ -162,6 +162,20 @@
       margin-top: 10px;
     }
 
+    .product-preview {
+      display: grid;
+      place-items: center;
+      min-height: 220px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #02060a;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+      padding: 14px;
+      text-align: center;
+    }
+
     button,
     a.button {
       display: grid;
@@ -237,6 +251,7 @@
     <div id="message" class="message">正在啟動相機...</div>
 
     <section id="result-panel" class="panel hidden">
+      <div id="product-preview" class="product-preview">已掃到商品連結。商品圖片需要後端擷取，現在可先點下方按鈕開啟商品頁。</div>
       <a id="open-link" class="button" href="#" target="_self" rel="noopener">打開商品頁</a>
       <button id="rescan-btn" class="secondary" type="button">重新掃描</button>
       <textarea id="result-url" readonly></textarea>
@@ -434,11 +449,7 @@
       openLink.href = url;
       resultUrl.value = url;
       resultPanel.classList.remove("hidden");
-      showMessage("已掃到淘寶商品連結，正在打開商品頁。", "ok");
-
-      window.setTimeout(function() {
-        window.location.href = url;
-      }, 500);
+      showMessage("已掃到淘寶商品連結，請按按鈕打開商品頁。", "ok");
     }
 
     function resetScan() {
