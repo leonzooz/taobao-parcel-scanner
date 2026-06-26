@@ -83,8 +83,6 @@ async function processItem(page, item) {
       await page.waitForTimeout(1500);
     }
 
-    await gentleScroll(page);
-
     const imageUrl = await findBestImageUrl(page);
 
     if (!imageUrl) {
@@ -132,21 +130,11 @@ async function looksBlocked(page) {
   );
 }
 
-async function gentleScroll(page) {
-  for (let i = 0; i < 3; i++) {
-    await page.mouse.wheel(0, 450);
-    await page.waitForTimeout(700);
-  }
-
-  await page.mouse.wheel(0, -900);
-  await page.waitForTimeout(700);
-}
-
 async function findBestImageUrl(page) {
   const candidates = await page.evaluate(() => {
     const urls = [];
 
-    function add(value, score) {
+    function add(value, score, source) {
       if (!value) return;
 
       let url = String(value).trim();
@@ -155,19 +143,39 @@ async function findBestImageUrl(page) {
       if (url.startsWith("//")) url = `https:${url}`;
       if (url.startsWith("http://")) url = `https://${url.slice(7)}`;
 
-      urls.push({ url, score });
+      urls.push({ url, score, source: source || "" });
     }
 
     for (const meta of document.querySelectorAll("meta[property='og:image'], meta[name='og:image'], meta[name='twitter:image']")) {
-      add(meta.getAttribute("content"), 1000);
+      add(meta.getAttribute("content"), 5000, "meta");
     }
 
     for (const script of document.querySelectorAll("script[type='application/ld+json']")) {
       try {
         const data = JSON.parse(script.textContent || "{}");
         const image = Array.isArray(data.image) ? data.image[0] : data.image;
-        add(image, 950);
+        add(image, 4800, "jsonld");
       } catch (error) {}
+    }
+
+    const scriptText = Array.from(document.scripts)
+      .map((script) => script.textContent || "")
+      .join("\n");
+
+    const regexes = [
+      /"picUrl"\s*:\s*"([^"]*img\.alicdn\.com[^"]+)"/g,
+      /"mainPic"\s*:\s*"([^"]*img\.alicdn\.com[^"]+)"/g,
+      /"images"\s*:\s*\[\s*"([^"]*img\.alicdn\.com[^"]+)"/g,
+      /"auctionImages"\s*:\s*\[\s*"([^"]*img\.alicdn\.com[^"]+)"/g,
+      /"skuPicUrl"\s*:\s*"([^"]*img\.alicdn\.com[^"]+)"/g
+    ];
+
+    for (const regex of regexes) {
+      var match;
+
+      while ((match = regex.exec(scriptText))) {
+        add(match[1], 4500, "script-data");
+      }
     }
 
     for (const img of document.images) {
@@ -181,28 +189,115 @@ async function findBestImageUrl(page) {
         img.getAttribute("data-original");
 
       let score = 0;
+      const area = Math.round(rect.width * rect.height);
+      const ratio = rect.height ? rect.width / rect.height : 0;
+      const alt = img.alt || "";
+      const parentText = img.closest("a, div, li, section")?.textContent || "";
 
       if (src && src.includes("img.alicdn.com")) score += 500;
-      if (rect.width >= 250 && rect.height >= 250) score += 250;
-      if (rect.top >= -200 && rect.top <= window.innerHeight + 600) score += 120;
-      if (img.alt && /主图|商品|product|item/i.test(img.alt)) score += 80;
+      if (rect.width >= 260 && rect.height >= 260) score += 600;
+      if (ratio >= 0.72 && ratio <= 1.38) score += 600;
+      if (rect.top >= -150 && rect.top <= window.innerHeight * 0.9) score += 500;
+      if (/主图|商品|product|item/i.test(alt)) score += 180;
+      if (/你可能|广告|廣告|详情|詳情|推荐|推薦|涂层|豆浆|活动|活動/.test(parentText + " " + alt + " " + src)) score -= 1800;
+      if (ratio > 1.65 || ratio < 0.55) score -= 1200;
+      if (rect.top > window.innerHeight * 1.2) score -= 900;
 
-      score += Math.min(200, Math.round(rect.width + rect.height));
-      add(src, score);
+      score += Math.min(400, Math.round(Math.sqrt(area)));
+      add(src, score, "visible-img");
     }
 
     return urls;
   });
 
-  const clean = candidates
+  const clean = dedupeCandidates(candidates
     .map((item) => ({
       url: normalizeImageUrl(item.url),
-      score: item.score
+      score: item.score,
+      source: item.source
     }))
-    .filter((item) => isUsableImageUrl(item.url))
-    .sort((a, b) => b.score - a.score);
+    .filter((item) => isUsableImageUrl(item.url)))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 12);
 
-  return clean[0]?.url || "";
+  const verified = [];
+
+  for (const candidate of clean) {
+    const imageInfo = await inspectImage(page, candidate.url).catch(() => null);
+
+    if (!imageInfo || !imageInfo.width || !imageInfo.height) {
+      continue;
+    }
+
+    const ratio = imageInfo.width / imageInfo.height;
+    let score = candidate.score;
+
+    if (imageInfo.width >= 500 && imageInfo.height >= 500) score += 1000;
+    if (ratio >= 0.72 && ratio <= 1.38) score += 1200;
+    if (ratio > 1.65 || ratio < 0.55) score -= 5000;
+    if (imageInfo.byteLength < 12000) score -= 2000;
+
+    verified.push({
+      ...candidate,
+      ...imageInfo,
+      score
+    });
+  }
+
+  verified.sort((a, b) => b.score - a.score);
+
+  for (const item of verified.slice(0, 5)) {
+    console.log(`候選圖 ${item.score} ${item.width}x${item.height} ${item.source} ${item.url}`);
+  }
+
+  return verified[0]?.url || clean[0]?.url || "";
+}
+
+function dedupeCandidates(candidates) {
+  const seen = new Set();
+  const result = [];
+
+  for (const candidate of candidates) {
+    const key = candidate.url.replace(/\?.*$/, "");
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    result.push(candidate);
+  }
+
+  return result;
+}
+
+async function inspectImage(page, imageUrl) {
+  const response = await page.request.get(imageUrl, {
+    headers: {
+      referer: page.url(),
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari/537.36"
+    },
+    timeout: 45000
+  });
+
+  if (!response.ok()) {
+    return null;
+  }
+
+  const contentType = response.headers()["content-type"] || "";
+  const buffer = Buffer.from(await response.body());
+  const size = getImageSize(buffer, contentType);
+
+  if (!size) {
+    return null;
+  }
+
+  return {
+    width: size.width,
+    height: size.height,
+    byteLength: buffer.length
+  };
 }
 
 async function downloadImage(page, imageUrl) {
@@ -276,8 +371,73 @@ function isUsableImageUrl(url) {
   if (!url) return false;
   if (!/^https:\/\//i.test(url)) return false;
   if (!/\.(jpg|jpeg|png|webp)(?:\?|$)/i.test(url)) return false;
-  if (/sprite|icon|logo|avatar|loading|placeholder/i.test(url)) return false;
+  if (/sprite|icon|logo|avatar|loading|placeholder|desc|detail|bao|banner|ad/i.test(url)) return false;
   return true;
+}
+
+function getImageSize(buffer, contentType) {
+  if (buffer.length < 24) return null;
+
+  if (buffer[0] === 0xff && buffer[1] === 0xd8) {
+    let offset = 2;
+
+    while (offset < buffer.length) {
+      if (buffer[offset] !== 0xff) return null;
+
+      const marker = buffer[offset + 1];
+      const length = buffer.readUInt16BE(offset + 2);
+
+      if (marker >= 0xc0 && marker <= 0xc3) {
+        return {
+          height: buffer.readUInt16BE(offset + 5),
+          width: buffer.readUInt16BE(offset + 7)
+        };
+      }
+
+      offset += 2 + length;
+    }
+  }
+
+  if (buffer.toString("ascii", 1, 4) === "PNG") {
+    return {
+      width: buffer.readUInt32BE(16),
+      height: buffer.readUInt32BE(20)
+    };
+  }
+
+  if (/webp/i.test(contentType) || buffer.toString("ascii", 8, 12) === "WEBP") {
+    return getWebpSize(buffer);
+  }
+
+  return null;
+}
+
+function getWebpSize(buffer) {
+  const type = buffer.toString("ascii", 12, 16);
+
+  if (type === "VP8X" && buffer.length >= 30) {
+    return {
+      width: 1 + buffer.readUIntLE(24, 3),
+      height: 1 + buffer.readUIntLE(27, 3)
+    };
+  }
+
+  if (type === "VP8 " && buffer.length >= 30) {
+    return {
+      width: buffer.readUInt16LE(26) & 0x3fff,
+      height: buffer.readUInt16LE(28) & 0x3fff
+    };
+  }
+
+  if (type === "VP8L" && buffer.length >= 25) {
+    const bits = buffer.readUInt32LE(21);
+    return {
+      width: (bits & 0x3fff) + 1,
+      height: ((bits >> 14) & 0x3fff) + 1
+    };
+  }
+
+  return null;
 }
 
 function extensionFromContentType(contentType) {
