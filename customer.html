@@ -543,8 +543,10 @@
         return;
       }
 
-      const imageHtml = data.productImageUrl
-        ? "<img class=\"product-image\" src=\"" + escapeAttr(data.productImageUrl) + "\" alt=\"商品圖片\">"
+      const imageUrl = getDisplayImageUrl(data);
+      const fallbackImageUrl = getFallbackImageUrl(data);
+      const imageHtml = imageUrl
+        ? "<img class=\"product-image\" src=\"" + escapeAttr(imageUrl) + "\" data-fallback-src=\"" + escapeAttr(fallbackImageUrl) + "\" alt=\"商品圖片\" onerror=\"handleProductImageError(this)\">"
         : "<div>尚無商品圖片</div>";
 
       preview.innerHTML =
@@ -558,6 +560,38 @@
         "</div>";
 
       showMessage("已找到商品資料。", "ok");
+    }
+
+    function getDisplayImageUrl(data) {
+      if (data && data.productImageFileId) {
+        return "https://drive.google.com/thumbnail?id=" + encodeURIComponent(data.productImageFileId) + "&sz=w1000";
+      }
+
+      return data && data.productImageUrl ? data.productImageUrl : "";
+    }
+
+    function getFallbackImageUrl(data) {
+      if (data && data.productImageUrl) {
+        return data.productImageUrl;
+      }
+
+      if (data && data.productImageFileId) {
+        return "https://drive.google.com/uc?export=view&id=" + encodeURIComponent(data.productImageFileId);
+      }
+
+      return "";
+    }
+
+    function handleProductImageError(img) {
+      const fallback = img.getAttribute("data-fallback-src");
+
+      if (fallback && img.src !== fallback) {
+        img.removeAttribute("data-fallback-src");
+        img.src = fallback;
+        return;
+      }
+
+      img.outerHTML = "<div>商品圖片暫時無法顯示</div>";
     }
 
     function renderLookupError(url, messageText) {
