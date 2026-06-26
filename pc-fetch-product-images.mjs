@@ -55,7 +55,8 @@ async function getPendingItems() {
   url.searchParams.set("limit", String(LIMIT));
 
   const response = await fetch(url);
-  const data = await response.json();
+  const body = await response.text();
+  const data = parseAppsScriptJson(body, "讀取待抓清單");
 
   if (data.status !== "success") {
     throw new Error(data.message || "讀取待抓清單失敗");
@@ -244,7 +245,8 @@ async function uploadImageToAppsScript(data) {
     body: params
   });
 
-  return response.json();
+  const body = await response.text();
+  return parseAppsScriptJson(body, "上傳商品首圖");
 }
 
 async function markImageError(item, message) {
@@ -287,6 +289,16 @@ function extensionFromContentType(contentType) {
 
 function extractItemId(url) {
   return new URL(url).searchParams.get("id");
+}
+
+function parseAppsScriptJson(body, actionName) {
+  try {
+    return JSON.parse(body);
+  } catch (error) {
+    throw new Error(
+      `${actionName} 回傳不是 JSON：${body.slice(0, 120)}。請確認 Apps Script 已貼最新版並「管理部署 → 編輯 → 新版本 → 部署」。`
+    );
+  }
 }
 
 main().catch((error) => {
