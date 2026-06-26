@@ -8,6 +8,7 @@
   <style>
     :root {
       --bg: #071019;
+      --panel: #101a25;
       --panel2: #172536;
       --text: #edf6ff;
       --muted: #96a8bb;
@@ -19,7 +20,9 @@
       --shade: rgba(0, 0, 0, .58);
     }
 
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
 
     body {
       margin: 0;
@@ -48,9 +51,11 @@
       margin: 0;
       font-size: 22px;
       line-height: 1.2;
+      letter-spacing: 0;
     }
 
     .pill {
+      flex: 0 0 auto;
       border: 1px solid var(--line);
       border-radius: 999px;
       padding: 6px 10px;
@@ -85,7 +90,10 @@
 
     .scan-mask {
       position: absolute;
-      inset: 0;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
       background:
         linear-gradient(var(--shade), var(--shade)) top / 100% calc(var(--box-top) * 1px) no-repeat,
         linear-gradient(var(--shade), var(--shade)) left calc(var(--box-top) * 1px) / calc(var(--box-left) * 1px) calc(var(--box-size) * 1px) no-repeat,
@@ -104,14 +112,22 @@
       box-shadow: 0 0 0 1px rgba(0, 0, 0, .28), 0 0 20px rgba(34, 184, 255, .34);
     }
 
-    .scan-box::before {
+    .scan-box::before,
+    .scan-box::after {
       content: "";
       position: absolute;
       left: 16px;
       right: 16px;
-      top: 50%;
       height: 2px;
       background: rgba(34, 184, 255, .75);
+    }
+
+    .scan-box::before {
+      top: 50%;
+    }
+
+    .scan-box::after {
+      display: none;
     }
 
     .guide {
@@ -126,6 +142,7 @@
       color: var(--text);
       font-size: 14px;
       line-height: 1.45;
+      pointer-events: none;
     }
 
     .message {
@@ -139,9 +156,20 @@
       line-height: 1.45;
     }
 
-    .message.ok { color: var(--ok); border-color: rgba(69, 212, 141, .45); }
-    .message.warn { color: var(--warn); border-color: rgba(255, 204, 102, .45); }
-    .message.bad { color: var(--bad); border-color: rgba(255, 112, 112, .45); }
+    .message.ok {
+      color: var(--ok);
+      border-color: rgba(69, 212, 141, .45);
+    }
+
+    .message.warn {
+      color: var(--warn);
+      border-color: rgba(255, 204, 102, .45);
+    }
+
+    .message.bad {
+      color: var(--bad);
+      border-color: rgba(255, 112, 112, .45);
+    }
 
     .controls {
       display: grid;
@@ -174,7 +202,9 @@
       cursor: not-allowed;
     }
 
-    .hidden { display: none !important; }
+    .hidden {
+      display: none !important;
+    }
 
     .photo-panel {
       display: grid;
@@ -220,7 +250,9 @@
     }
 
     @media (max-width: 390px) {
-      .app { padding: 8px; }
+      .app {
+        padding: 8px;
+      }
 
       #camera,
       .camera-card {
@@ -228,11 +260,12 @@
         height: 70vh;
       }
 
-      .controls { grid-template-columns: 1fr; }
+      .controls {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
-
 <body>
   <main class="app">
     <div class="topbar">
@@ -256,12 +289,13 @@
 
     <div id="message" class="message">正在啟動相機...</div>
 
-    <div class="controls">
+    <div id="scan-controls" class="controls hidden">
       <button id="start-btn" class="secondary hidden" type="button">啟動相機</button>
-      <button id="switch-btn" class="secondary" type="button">切換鏡頭</button>
     </div>
 
     <section id="photo-panel" class="photo-panel hidden">
+      <button id="capture-btn" type="button">拍標籤並上傳</button>
+
       <label>
         商品連結
         <textarea id="product-url" readonly></textarea>
@@ -276,7 +310,6 @@
         </select>
       </label>
 
-      <button id="capture-btn" type="button">拍標籤並上傳</button>
       <img id="preview" class="preview hidden" alt="標籤照片預覽" />
 
       <div class="controls">
@@ -297,8 +330,8 @@
     const scanUi = document.getElementById("scan-ui");
     const photoUi = document.getElementById("photo-ui");
     const message = document.getElementById("message");
+    const scanControls = document.getElementById("scan-controls");
     const startBtn = document.getElementById("start-btn");
-    const switchBtn = document.getElementById("switch-btn");
     const photoPanel = document.getElementById("photo-panel");
     const productUrl = document.getElementById("product-url");
     const statusInput = document.getElementById("status");
@@ -312,14 +345,13 @@
     let stream = null;
     let scanTimer = null;
     let currentMode = "scan";
-    let facingMode = "environment";
+    const facingMode = "environment";
     let lastRejectAt = 0;
     let isUploading = false;
     let photoData = "";
     let photoName = "";
 
     startBtn.addEventListener("click", startCamera);
-    switchBtn.addEventListener("click", switchCamera);
     captureBtn.addEventListener("click", captureAndUpload);
     rescanBtn.addEventListener("click", resetToScan);
     retryCameraBtn.addEventListener("click", startCamera);
@@ -327,7 +359,6 @@
     window.addEventListener("load", startCamera);
     window.addEventListener("resize", updateScanBox);
     window.addEventListener("pagehide", stopCamera);
-
     document.addEventListener("visibilitychange", function() {
       if (document.hidden) stopCamera();
     });
@@ -339,7 +370,6 @@
 
     function isTaobaoLink(value) {
       const text = String(value || "").trim().toLowerCase();
-
       return text.includes("taobao.com") ||
         text.includes("item.taobao") ||
         text.includes("m.tb.cn") ||
@@ -362,8 +392,8 @@
             width: { ideal: 1280 },
             height: { ideal: 720 }
           },
-          audio: false
-        });
+        audio: false
+      });
 
         camera.srcObject = stream;
         await camera.play();
@@ -392,16 +422,9 @@
         stream.getTracks().forEach(function(track) {
           track.stop();
         });
-
         stream = null;
       }
-
       camera.srcObject = null;
-    }
-
-    async function switchCamera() {
-      facingMode = facingMode === "environment" ? "user" : "environment";
-      await startCamera();
     }
 
     function setMode(nextMode) {
@@ -409,6 +432,7 @@
       mode.textContent = nextMode === "scan" ? "掃左下 QR" : "拍標籤";
       scanUi.classList.toggle("hidden", nextMode !== "scan");
       photoUi.classList.toggle("hidden", nextMode !== "photo");
+      scanControls.classList.toggle("hidden", nextMode !== "scan");
       photoPanel.classList.toggle("hidden", nextMode !== "photo");
 
       if (nextMode === "scan") {
@@ -420,7 +444,6 @@
 
     function updateScanBox() {
       const rect = cameraCard.getBoundingClientRect();
-
       if (!rect.width || !rect.height) return;
 
       const size = Math.round(Math.min(rect.width * 0.42, rect.height * 0.32, 230));
@@ -434,9 +457,7 @@
 
     function startScanLoop() {
       stopScanLoop();
-
       if (currentMode !== "scan") return;
-
       scanTimer = window.setInterval(scanLeftBox, 260);
     }
 
@@ -497,12 +518,10 @@
 
       if (!isTaobaoLink(scanned)) {
         const now = Date.now();
-
         if (now - lastRejectAt > 1000) {
           lastRejectAt = now;
           showMessage("框內不是淘寶商品 QR，請對準左下角", "warn");
         }
-
         return;
       }
 
@@ -595,7 +614,6 @@
           method: "POST",
           body: params
         });
-
         const text = await response.text();
 
         if (response.ok && !/error|fail|失敗/i.test(text)) {
@@ -615,7 +633,6 @@
             mode: "no-cors",
             body: params
           });
-
           showMessage("已送出，準備掃下一件", "ok");
           setTimeout(resetToScan, 700);
         } catch (error2) {
@@ -635,7 +652,6 @@
       photoName = "";
       preview.src = "";
       preview.classList.add("hidden");
-
       setMode("scan");
       updateScanBox();
       showMessage("請把左下角淘寶 QR 放進白框", "");
