@@ -83,39 +83,54 @@ async function processItem(page, item) {
       await page.waitForTimeout(1500);
     }
 
-    const imageUrl = await findBestImageUrl(page);
+    const imageCandidates = await findBestImageCandidates(page);
 
-    if (!imageUrl) {
+    if (!imageCandidates.length) {
       throw new Error("找不到商品主圖");
     }
 
-    console.log(`抓到圖片：${imageUrl}`);
-
-    const image = await downloadImage(page, imageUrl);
     const itemId = extractItemId(item.productUrl) || String(item.rowNumber);
-    const ext = extensionFromContentType(image.contentType) || ".jpg";
-    const imageName = `product-${itemId}-${Date.now()}${ext}`;
-    const localPath = path.join(OUTPUT_DIR, imageName);
+    let lastImageError = null;
 
-    await fs.writeFile(localPath, image.buffer);
-    console.log(`已暫存：${localPath}`);
+    for (let i = 0; i < imageCandidates.length; i++) {
+      const imageUrl = imageCandidates[i].url;
 
-    const uploadResult = await uploadImageToAppsScript({
-      rowNumber: item.rowNumber,
-      productUrl: item.productUrl,
-      imageName,
-      imageData: image.buffer.toString("base64"),
-      contentType: image.contentType || "image/jpeg",
-      imageSourceUrl: imageUrl
-    });
+      try {
+        console.log(`嘗試圖片 ${i + 1}/${imageCandidates.length}：${imageUrl}`);
 
-    if (uploadResult.status !== "success") {
-      throw new Error(uploadResult.message || "回填 Apps Script 失敗");
+        const image = await downloadImage(page, imageUrl);
+        const ext = extensionFromContentType(image.contentType) || ".jpg";
+        const imageName = `product-${itemId}-${Date.now()}${ext}`;
+        const localPath = path.join(OUTPUT_DIR, imageName);
+
+        await fs.writeFile(localPath, image.buffer);
+        console.log(`已暫存：${localPath}`);
+
+        const uploadResult = await uploadImageToAppsScript({
+          rowNumber: item.rowNumber,
+          productUrl: item.productUrl,
+          imageName,
+          imageData: image.buffer.toString("base64"),
+          contentType: image.contentType || "image/jpeg",
+          imageSourceUrl: imageUrl
+        });
+
+        if (uploadResult.status !== "success") {
+          throw new Error(uploadResult.message || "回填 Apps Script 失敗");
+        }
+
+        console.log(`已回填 Sheet：${uploadResult.productImageUrl}`);
+        return;
+      } catch (error) {
+        lastImageError = error;
+        console.log(`候選圖片失敗：${error.message}`);
+      }
     }
 
-    console.log(`已回填 Sheet：${uploadResult.productImageUrl}`);
+    throw new Error(lastImageError ? `所有候選圖片都失敗：${lastImageError.message}` : "所有候選圖片都失敗");
   } catch (error) {
     console.log(`失敗：${error.message}`);
+    await writeFailureLog(item, error.message, page.url());
     await markImageError(item, error.message);
   }
 }
@@ -130,7 +145,7 @@ async function looksBlocked(page) {
   );
 }
 
-async function findBestImageUrl(page) {
+async function findBestImageCandidates(page) {
   const candidates = await page.evaluate(() => {
     const urls = [];
 
@@ -291,7 +306,15 @@ async function findBestImageUrl(page) {
     console.log(`候選圖 ${item.score} ${item.width}x${item.height} ${item.source} ${item.url}`);
   }
 
-  return verified[0]?.url || clean[0]?.url || "";
+  const selected = verified.length ? verified : clean;
+
+  return selected.slice(0, 5).map((item) => ({
+    url: item.url,
+    score: item.score,
+    width: item.width || "",
+    height: item.height || "",
+    source: item.source || ""
+  }));
 }
 
 function dedupeCandidates(candidates) {
@@ -397,6 +420,28 @@ async function markImageError(item, message) {
     method: "POST",
     body: params
   }).catch(() => {});
+}
+
+async function writeFailureLog(item, message, currentUrl) {
+  const filePath = path.resolve("pc-image-failures.csv");
+  const exists = await fs.stat(filePath).then(() => true).catch(() => false);
+  const row = [
+    new Date().toISOString(),
+    item.rowNumber,
+    item.productUrl,
+    currentUrl || "",
+    message || ""
+  ].map(csvCell).join(",") + "\n";
+
+  if (!exists) {
+    await fs.writeFile(filePath, "time,rowNumber,productUrl,currentUrl,message\n", "utf8");
+  }
+
+  await fs.appendFile(filePath, row, "utf8");
+}
+
+function csvCell(value) {
+  return `"${String(value || "").replace(/"/g, '""')}"`;
 }
 
 function normalizeImageUrl(url) {

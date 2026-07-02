@@ -1,4 +1,5 @@
 node_modules/
 pc-chrome-profile/
 pc-product-images/
+pc-image-failures.csv
 package-lock.json
