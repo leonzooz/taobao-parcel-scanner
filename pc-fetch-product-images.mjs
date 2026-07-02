@@ -9,6 +9,7 @@ const APPS_SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbzWWBupdwuar1EvO0qsXAehBawmt_TQk7faI9mYaNdBT6bWwFxqiEOJD5xwWWLVikWy/exec";
 
 const LIMIT = Number(process.env.LIMIT || 20);
+const ITEM_DELAY_MS = Number(process.env.ITEM_DELAY_MS || 0);
 const PROFILE_DIR = path.resolve("pc-chrome-profile");
 const OUTPUT_DIR = path.resolve("pc-product-images");
 const HEADLESS = process.env.HEADLESS === "1";
@@ -40,8 +41,14 @@ async function main() {
   page.setDefaultTimeout(30000);
 
   try {
-    for (const item of items) {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
       await processItem(page, item);
+
+      if (ITEM_DELAY_MS > 0 && i < items.length - 1) {
+        console.log(`等待 ${Math.round(ITEM_DELAY_MS / 1000)} 秒後處理下一筆...`);
+        await page.waitForTimeout(ITEM_DELAY_MS);
+      }
     }
   } finally {
     await context.close();
