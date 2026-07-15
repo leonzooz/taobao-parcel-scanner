@@ -15,6 +15,10 @@ function doGet(e) {
 function doPost(e) {
   var params = e && e.parameter ? e.parameter : {};
 
+  if (params.mode === "classifyLabel") {
+    return handleClassifyLabel_(params);
+  }
+
   if (params.mode === "productImage") {
     return handleProductImageUpload_(params);
   }
@@ -24,6 +28,32 @@ function doPost(e) {
   }
 
   return handleUpload_(e);
+}
+
+function handleClassifyLabel_(params) {
+  var startedAt = new Date().getTime();
+
+  try {
+    var imageData = params.imageData || params.photoData || "";
+
+    if (!imageData) {
+      throw new Error("缺少 imageData");
+    }
+
+    var result = classifyLabelWithOpenAI_(imageData);
+
+    result.status = "success";
+    result.elapsed_ms = new Date().getTime() - startedAt;
+
+    return jsonOutput_(result, params.callback || "");
+
+  } catch (error) {
+    return jsonOutput_({
+      status: "error",
+      message: error.toString(),
+      elapsed_ms: new Date().getTime() - startedAt
+    }, params.callback || "");
+  }
 }
 
 function handleUpload_(e) {
@@ -447,6 +477,142 @@ function processPendingProductImages() {
 function processAllPending() {
   processPendingOcr();
   processPendingProductImages();
+}
+
+function classifyLabelWithOpenAI_(imageData) {
+  var apiKey = getOpenAiApiKey_();
+  var model = PropertiesService.getScriptProperties().getProperty("OPENAI_MODEL") || "gpt-4.1-mini";
+  var dataUrl = normalizeImageDataUrl_(imageData);
+  var prompt = [
+    "你是倉庫分貨員的助手。請看淘寶包裹標籤照片，讀取標籤上的中文商品資訊，判斷現場分貨大類。",
+    "只能從以下 sort_area 選一個：衣鞋包、家居電器、3C數碼、美妝個護、母嬰兒童、文具樂器、其他。",
+    "規則：鞋、拖鞋、包、衣褲、帽、襪歸衣鞋包；燈、廚房電器、家用電器、收納、居家用品歸家居電器；手機配件、投影儀、相機、耳機、電子設備歸3C數碼；笛子、樂器、文具歸文具樂器。",
+    "如果看不清或不確定，sort_area 用其他，confidence 用 low。",
+    "只回傳 JSON，不要 markdown，不要解釋文字。格式：{\"sort_area\":\"家居電器\",\"confidence\":\"high\",\"reason\":\"標籤含 LED燈泡、小夜燈\",\"product_hint\":\"LED小夜燈\"}"
+  ].join("\n");
+
+  var payload = {
+    model: model,
+    input: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: prompt
+          },
+          {
+            type: "input_image",
+            image_url: dataUrl
+          }
+        ]
+      }
+    ],
+    max_output_tokens: 220
+  };
+
+  var response = UrlFetchApp.fetch("https://api.openai.com/v1/responses", {
+    method: "post",
+    muteHttpExceptions: true,
+    contentType: "application/json",
+    headers: {
+      Authorization: "Bearer " + apiKey
+    },
+    payload: JSON.stringify(payload)
+  });
+
+  var code = response.getResponseCode();
+  var text = response.getContentText();
+
+  if (code < 200 || code >= 300) {
+    throw new Error("OpenAI API error " + code + ": " + text);
+  }
+
+  var data = JSON.parse(text);
+  var outputText = extractOpenAIOutputText_(data);
+  var parsed = parseJsonFromText_(outputText);
+  var normalized = normalizeClassification_(parsed);
+
+  normalized.raw_output = outputText;
+
+  return normalized;
+}
+
+function getOpenAiApiKey_() {
+  var apiKey = PropertiesService.getScriptProperties().getProperty("OPENAI_API_KEY");
+
+  if (!apiKey) {
+    throw new Error("請先在 Apps Script Script Properties 設定 OPENAI_API_KEY");
+  }
+
+  return apiKey;
+}
+
+function normalizeImageDataUrl_(imageData) {
+  var value = String(imageData || "");
+
+  if (value.indexOf("data:image/") === 0) {
+    return value;
+  }
+
+  return "data:image/jpeg;base64," + value;
+}
+
+function extractOpenAIOutputText_(data) {
+  if (data.output_text) {
+    return data.output_text;
+  }
+
+  var parts = [];
+  var output = data.output || [];
+
+  for (var i = 0; i < output.length; i++) {
+    var content = output[i].content || [];
+
+    for (var j = 0; j < content.length; j++) {
+      if (content[j].text) {
+        parts.push(content[j].text);
+      }
+    }
+  }
+
+  return parts.join("\n");
+}
+
+function parseJsonFromText_(text) {
+  var cleaned = String(text || "")
+    .replace(/```json/g, "")
+    .replace(/```/g, "")
+    .trim();
+  var match = cleaned.match(/\{[\s\S]*\}/);
+
+  if (match) {
+    cleaned = match[0];
+  }
+
+  return JSON.parse(cleaned);
+}
+
+function normalizeClassification_(parsed) {
+  var allowed = ["衣鞋包", "家居電器", "3C數碼", "美妝個護", "母嬰兒童", "文具樂器", "其他"];
+  var sortArea = parsed.sort_area || parsed.category || "其他";
+
+  if (allowed.indexOf(sortArea) === -1) {
+    sortArea = "其他";
+  }
+
+  var confidence = parsed.confidence || "low";
+
+  if (["high", "medium", "low"].indexOf(confidence) === -1) {
+    confidence = "low";
+  }
+
+  return {
+    sort_area: sortArea,
+    confidence: confidence,
+    reason: parsed.reason || "",
+    product_hint: parsed.product_hint || ""
+  };
 }
 
 function runDriveOcr_(photoFileId) {

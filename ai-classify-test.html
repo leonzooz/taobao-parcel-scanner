@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>AI 標籤分類測試</title>
+  <style>
+    :root {
+      --bg: #071019;
+      --panel: #101a25;
+      --panel2: #172536;
+      --text: #edf6ff;
+      --muted: #96a8bb;
+      --line: #2a3a50;
+      --accent: #22b8ff;
+      --ok: #45d48d;
+      --warn: #ffcc66;
+      --bad: #ff7070;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", Arial, sans-serif;
+    }
+
+    main {
+      width: 100%;
+      max-width: 540px;
+      margin: 0 auto;
+      padding: 12px;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+
+    .panel {
+      display: grid;
+      gap: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 12px;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    input[type="file"] {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    button,
+    label.button {
+      display: grid;
+      place-items: center;
+      min-height: 56px;
+      border: 0;
+      border-radius: 8px;
+      padding: 13px 14px;
+      background: var(--accent);
+      color: #03131d;
+      font: inherit;
+      font-weight: 800;
+      text-align: center;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      color: var(--text);
+      background: var(--panel2);
+      border: 1px solid var(--line);
+    }
+
+    button:disabled,
+    label.button.disabled {
+      opacity: .62;
+      cursor: not-allowed;
+    }
+
+    img {
+      width: 100%;
+      max-height: 430px;
+      object-fit: contain;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #02060a;
+    }
+
+    .result {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel2);
+      padding: 12px;
+    }
+
+    .category {
+      color: var(--ok);
+      font-size: 28px;
+      font-weight: 900;
+      line-height: 1.2;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
+    .bad {
+      color: var(--bad);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>AI 標籤分類測試</h1>
+
+    <section class="panel">
+      <div class="hint">拍整張包裹標籤，AI 會直接判斷大類。這頁只用來測速度與準確率，不會寫入正式資料。</div>
+
+      <input id="file-input" type="file" accept="image/*" capture="environment" />
+      <label id="pick-btn" class="button" for="file-input">拍標籤 / 選照片</label>
+
+      <img id="preview" class="hidden" alt="標籤預覽" />
+
+      <div class="grid">
+        <button id="classify-btn" type="button" disabled>AI 分類</button>
+        <button id="reset-btn" class="secondary" type="button">重選</button>
+      </div>
+    </section>
+
+    <section id="result" class="result hidden">
+      <div id="category" class="category"></div>
+      <div id="meta" class="meta"></div>
+    </section>
+  </main>
+
+  <canvas id="canvas" class="hidden"></canvas>
+
+  <script>
+    const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzWWBupdwuar1EvO0qsXAehBawmt_TQk7faI9mYaNdBT6bWwFxqiEOJD5xwWWLVikWy/exec";
+
+    const fileInput = document.getElementById("file-input");
+    const pickBtn = document.getElementById("pick-btn");
+    const classifyBtn = document.getElementById("classify-btn");
+    const resetBtn = document.getElementById("reset-btn");
+    const preview = document.getElementById("preview");
+    const result = document.getElementById("result");
+    const category = document.getElementById("category");
+    const meta = document.getElementById("meta");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    let imageData = "";
+
+    fileInput.addEventListener("change", handleFile);
+    classifyBtn.addEventListener("click", classifyImage);
+    resetBtn.addEventListener("click", resetPage);
+
+    async function handleFile() {
+      const file = fileInput.files && fileInput.files[0];
+
+      if (!file) {
+        return;
+      }
+
+      showResult("準備圖片中...", "", "");
+
+      try {
+        imageData = await compressImage(file);
+        preview.src = imageData;
+        preview.classList.remove("hidden");
+        classifyBtn.disabled = false;
+        result.classList.add("hidden");
+      } catch (error) {
+        showError("圖片處理失敗：" + error.message);
+      }
+    }
+
+    function compressImage(file) {
+      return new Promise(function(resolve, reject) {
+        const img = new Image();
+        const reader = new FileReader();
+
+        reader.onload = function() {
+          img.onload = function() {
+            const maxSide = 1280;
+            let width = img.width;
+            let height = img.height;
+
+            if (width >= height && width > maxSide) {
+              height = Math.round(height * maxSide / width);
+              width = maxSide;
+            } else if (height > width && height > maxSide) {
+              width = Math.round(width * maxSide / height);
+              height = maxSide;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL("image/jpeg", 0.72));
+          };
+
+          img.onerror = function() {
+            reject(new Error("無法讀取圖片"));
+          };
+
+          img.src = reader.result;
+        };
+
+        reader.onerror = function() {
+          reject(new Error("無法讀取檔案"));
+        };
+
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function classifyImage() {
+      if (!imageData) {
+        showError("請先拍照或選照片");
+        return;
+      }
+
+      const startedAt = Date.now();
+      classifyBtn.disabled = true;
+      pickBtn.classList.add("disabled");
+      showResult("AI 分類中...", "請稍等，正在讀取標籤文字並判斷大類。", "");
+
+      const params = new URLSearchParams();
+      params.append("mode", "classifyLabel");
+      params.append("imageData", imageData);
+
+      try {
+        const response = await fetch(APPS_SCRIPT_URL, {
+          method: "POST",
+          body: params
+        });
+        const text = await response.text();
+        const data = JSON.parse(text);
+
+        if (data.status !== "success") {
+          throw new Error(data.message || text);
+        }
+
+        const localMs = Date.now() - startedAt;
+        showResult(
+          data.sort_area || "其他",
+          "信心：" + (data.confidence || "low") +
+            "｜耗時：" + Math.round(localMs / 100) / 10 + " 秒" +
+            (data.elapsed_ms ? "｜後端：" + Math.round(data.elapsed_ms / 100) / 10 + " 秒" : ""),
+          (data.product_hint ? "商品提示：" + data.product_hint + "\n" : "") +
+            (data.reason ? "原因：" + data.reason : "")
+        );
+      } catch (error) {
+        showError("分類失敗：" + error.message);
+      } finally {
+        classifyBtn.disabled = false;
+        pickBtn.classList.remove("disabled");
+      }
+    }
+
+    function showResult(title, metaText, detailText) {
+      result.classList.remove("hidden");
+      category.classList.remove("bad");
+      category.textContent = title;
+      meta.textContent = [metaText, detailText].filter(Boolean).join("\n");
+    }
+
+    function showError(text) {
+      result.classList.remove("hidden");
+      category.classList.add("bad");
+      category.textContent = "錯誤";
+      meta.textContent = text;
+    }
+
+    function resetPage() {
+      fileInput.value = "";
+      imageData = "";
+      preview.src = "";
+      preview.classList.add("hidden");
+      classifyBtn.disabled = true;
+      result.classList.add("hidden");
+    }
+  </script>
+</body>
+</html>
