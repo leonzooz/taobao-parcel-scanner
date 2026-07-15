@@ -818,7 +818,7 @@
       const runId = ++classifyRunId;
       aiCard.classList.remove("hidden");
       aiCategory.textContent = "分類中...";
-      aiDetail.textContent = "AI 正在讀取標籤，最多等 3 秒。";
+      aiDetail.textContent = "AI 正在讀取標籤，最多等 10 秒。";
       showMessage("AI 分類中，可先確認照片；逾時也能上傳", "warn");
 
       const params = new URLSearchParams();
@@ -831,9 +831,9 @@
             status: "timeout",
             sort_area: "待分類",
             confidence: "low",
-            reason: "AI 分類超過 3 秒，先保留待分類"
+            reason: "AI 分類超過 10 秒，先保留待分類"
           });
-        }, 3000);
+        }, 10000);
       });
 
       const request = fetch(APPS_SCRIPT_URL, {

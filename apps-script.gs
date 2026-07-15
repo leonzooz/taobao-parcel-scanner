@@ -59,12 +59,28 @@ function handleClassifyLabel_(params) {
 function handleUpload_(e) {
   try {
     var params = e && e.parameter ? e.parameter : {};
+    var mode = params.mode || "";
+
+    if (mode && mode !== "staff") {
+      return jsonOutput_({
+        status: "error",
+        message: "不接受的上傳模式：" + mode
+      }, params.callback || "");
+    }
 
     var productUrl = params.productUrl || params.product_url || "";
+    var photoData = params.photoData || "";
+
+    if (!productUrl || !photoData) {
+      return jsonOutput_({
+        status: "error",
+        message: "缺少商品連結或標籤照片，未寫入 Sheet"
+      }, params.callback || "");
+    }
+
     var status = params.status || "待整理";
     var scanTime = params.scanTime || new Date().toLocaleString();
     var photoName = params.photoName || (new Date().getTime() + ".jpg");
-    var photoData = params.photoData || "";
     var sortArea = params.sort_area || params.sortArea || "待分類";
     var aiSortArea = params.ai_sort_area || params.aiSortArea || "";
     var aiConfidence = params.ai_confidence || params.aiConfidence || "";
