@@ -818,7 +818,7 @@
       const runId = ++classifyRunId;
       aiCard.classList.remove("hidden");
       aiCategory.textContent = "分類中...";
-      aiDetail.textContent = "AI 正在讀取標籤，最多等 10 秒。";
+      aiDetail.textContent = "AI 正在讀取標籤，最多等 3 秒。";
       showMessage("AI 分類中，可先確認照片；逾時也能上傳", "warn");
 
       const params = new URLSearchParams();
@@ -831,9 +831,9 @@
             status: "timeout",
             sort_area: "待分類",
             confidence: "low",
-            reason: "AI 分類超過 10 秒，先保留待分類"
+            reason: "AI 分類超過 3 秒，先保留待分類"
           });
-        }, 10000);
+        }, 3000);
       });
 
       const request = fetch(APPS_SCRIPT_URL, {
@@ -844,7 +844,16 @@
           return response.text();
         })
         .then(function(text) {
-          return JSON.parse(text);
+          try {
+            return JSON.parse(text);
+          } catch (error) {
+            return {
+              status: "error",
+              sort_area: "待分類",
+              confidence: "low",
+              reason: text || error.message
+            };
+          }
         })
         .catch(function(error) {
           return {
@@ -859,6 +868,15 @@
 
       if (runId !== classifyRunId || !photoData) {
         return;
+      }
+
+      reviewActions.classList.remove("hidden");
+      uploadBtn.classList.remove("hidden");
+      retakeBtn.classList.remove("hidden");
+
+      if (!isUploading) {
+        uploadBtn.disabled = false;
+        retakeBtn.disabled = false;
       }
 
       if (data.status === "success" && data.sort_area) {

@@ -40,7 +40,7 @@ function handleClassifyLabel_(params) {
       throw new Error("缺少 imageData");
     }
 
-    var result = classifyLabelWithGemini_(imageData);
+    var result = classifyLabelWithGroq_(imageData);
 
     result.status = "success";
     result.elapsed_ms = new Date().getTime() - startedAt;
@@ -505,10 +505,10 @@ function processAllPending() {
   processPendingProductImages();
 }
 
-function classifyLabelWithGemini_(imageData) {
-  var apiKey = getGeminiApiKey_();
-  var model = PropertiesService.getScriptProperties().getProperty("GEMINI_MODEL") || "gemini-3.5-flash";
-  var imageInfo = getGeminiInlineImage_(imageData);
+function classifyLabelWithGroq_(imageData) {
+  var apiKey = getGroqApiKey_();
+  var model = PropertiesService.getScriptProperties().getProperty("GROQ_MODEL") || "meta-llama/llama-4-scout-17b-16e-instruct";
+  var dataUrl = normalizeImageDataUrl_(imageData);
   var prompt = [
     "你是倉庫分貨員的助手。請看淘寶包裹標籤照片，讀取標籤上的中文商品資訊，判斷現場分貨大類。",
     "只能從以下 sort_area 選一個：衣鞋包、家居電器、3C數碼、美妝個護、母嬰兒童、文具樂器、其他。",
@@ -519,29 +519,38 @@ function classifyLabelWithGemini_(imageData) {
 
   var payload = {
     model: model,
-    input: [
+    messages: [
       {
-        type: "text",
-        text: prompt
-      },
-      {
-        type: "image",
-        data: imageInfo.base64,
-        mime_type: imageInfo.mimeType
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: prompt
+          },
+          {
+            type: "image_url",
+            image_url: {
+              url: dataUrl
+            }
+          }
+        ]
       }
     ],
+    temperature: 0.1,
+    max_completion_tokens: 220,
+    top_p: 1,
+    stream: false,
     response_format: {
-      type: "text",
-      mime_type: "application/json"
+      type: "json_object"
     }
   };
 
-  var response = UrlFetchApp.fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
+  var response = UrlFetchApp.fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "post",
     muteHttpExceptions: true,
     contentType: "application/json",
     headers: {
-      "x-goog-api-key": apiKey
+      Authorization: "Bearer " + apiKey
     },
     payload: JSON.stringify(payload)
   });
@@ -550,11 +559,11 @@ function classifyLabelWithGemini_(imageData) {
   var text = response.getContentText();
 
   if (code < 200 || code >= 300) {
-    throw new Error("Gemini API error " + code + ": " + text);
+    throw new Error("Groq API error " + code + ": " + text);
   }
 
   var data = JSON.parse(text);
-  var outputText = extractGeminiOutputText_(data);
+  var outputText = extractGroqOutputText_(data);
   var parsed = parseJsonFromText_(outputText);
   var normalized = normalizeClassification_(parsed);
 
@@ -563,11 +572,11 @@ function classifyLabelWithGemini_(imageData) {
   return normalized;
 }
 
-function getGeminiApiKey_() {
-  var apiKey = PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY");
+function getGroqApiKey_() {
+  var apiKey = PropertiesService.getScriptProperties().getProperty("GROQ_API_KEY");
 
   if (!apiKey) {
-    throw new Error("請先在 Apps Script Script Properties 設定 GEMINI_API_KEY");
+    throw new Error("請先在 Apps Script Script Properties 設定 GROQ_API_KEY");
   }
 
   return apiKey;
@@ -583,57 +592,14 @@ function normalizeImageDataUrl_(imageData) {
   return "data:image/jpeg;base64," + value;
 }
 
-function getGeminiInlineImage_(imageData) {
-  var dataUrl = normalizeImageDataUrl_(imageData);
-  var match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/);
+function extractGroqOutputText_(data) {
+  var choices = data.choices || [];
 
-  if (!match) {
-    throw new Error("圖片格式錯誤，無法送 Gemini 分類");
+  if (!choices.length || !choices[0].message) {
+    throw new Error("Groq 回傳格式異常");
   }
 
-  return {
-    mimeType: match[1],
-    base64: match[2]
-  };
-}
-
-function extractGeminiOutputText_(data) {
-  if (data.output_text) {
-    return data.output_text;
-  }
-
-  var parts = [];
-
-  if (data.output && data.output.length) {
-    for (var i = 0; i < data.output.length; i++) {
-      if (data.output[i].text) {
-        parts.push(data.output[i].text);
-      }
-
-      var content = data.output[i].content || [];
-      for (var j = 0; j < content.length; j++) {
-        if (content[j].text) {
-          parts.push(content[j].text);
-        }
-      }
-    }
-  }
-
-  if (data.candidates && data.candidates.length) {
-    for (var k = 0; k < data.candidates.length; k++) {
-      var candidateParts = data.candidates[k].content && data.candidates[k].content.parts
-        ? data.candidates[k].content.parts
-        : [];
-
-      for (var m = 0; m < candidateParts.length; m++) {
-        if (candidateParts[m].text) {
-          parts.push(candidateParts[m].text);
-        }
-      }
-    }
-  }
-
-  return parts.join("\n");
+  return choices[0].message.content || "";
 }
 
 function parseJsonFromText_(text) {
