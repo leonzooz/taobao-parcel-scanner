@@ -271,6 +271,55 @@
       font-weight: 650;
     }
 
+    .ai-card {
+      display: grid;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel2);
+      padding: 12px;
+    }
+
+    .ai-title {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .ai-category {
+      color: var(--ok);
+      font-size: 24px;
+      font-weight: 900;
+      line-height: 1.2;
+    }
+
+    .ai-detail {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .category-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .category-btn {
+      min-height: 48px;
+      color: var(--text);
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      padding: 10px 8px;
+      font-size: 15px;
+    }
+
+    .category-btn.active {
+      color: #03131d;
+      background: var(--ok);
+      border-color: var(--ok);
+    }
+
     @media (max-width: 390px) {
       .app {
         padding: 8px;
@@ -341,6 +390,26 @@
         </select>
       </label>
 
+      <section id="ai-card" class="ai-card hidden">
+        <div class="ai-title">AI 建議分貨區</div>
+        <div id="ai-category" class="ai-category">待分類</div>
+        <div id="ai-detail" class="ai-detail">拍照後會自動分析標籤。</div>
+      </section>
+
+      <label>
+        現場分貨區
+        <div id="category-grid" class="category-grid">
+          <button class="category-btn active" type="button" data-category="待分類">待分類</button>
+          <button class="category-btn" type="button" data-category="衣鞋包">衣鞋包</button>
+          <button class="category-btn" type="button" data-category="家居電器">家居電器</button>
+          <button class="category-btn" type="button" data-category="3C數碼">3C數碼</button>
+          <button class="category-btn" type="button" data-category="美妝個護">美妝個護</button>
+          <button class="category-btn" type="button" data-category="母嬰兒童">母嬰兒童</button>
+          <button class="category-btn" type="button" data-category="文具樂器">文具樂器</button>
+          <button class="category-btn" type="button" data-category="其他">其他</button>
+        </div>
+      </label>
+
       <div class="controls">
         <button id="rescan-btn" class="secondary" type="button">重掃 QR</button>
         <button id="retry-camera-btn" class="secondary" type="button">重開相機</button>
@@ -372,6 +441,10 @@
     const rescanBtn = document.getElementById("rescan-btn");
     const retryCameraBtn = document.getElementById("retry-camera-btn");
     const preview = document.getElementById("preview");
+    const aiCard = document.getElementById("ai-card");
+    const aiCategory = document.getElementById("ai-category");
+    const aiDetail = document.getElementById("ai-detail");
+    const categoryButtons = Array.from(document.querySelectorAll(".category-btn"));
     const canvas = document.getElementById("work-canvas");
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
@@ -383,6 +456,12 @@
     let isUploading = false;
     let photoData = "";
     let photoName = "";
+    let selectedSortArea = "待分類";
+    let aiSortArea = "";
+    let aiConfidence = "";
+    let aiReason = "";
+    let aiClassifiedAt = "";
+    let classifyRunId = 0;
 
     startBtn.addEventListener("click", startCamera);
     captureBtn.addEventListener("click", captureAndUpload);
@@ -390,6 +469,11 @@
     retakeBtn.addEventListener("click", retakePhoto);
     rescanBtn.addEventListener("click", resetToScan);
     retryCameraBtn.addEventListener("click", startCamera);
+    categoryButtons.forEach(function(button) {
+      button.addEventListener("click", function() {
+        setSelectedCategory(button.dataset.category || "待分類");
+      });
+    });
 
     window.addEventListener("load", startCamera);
     window.addEventListener("resize", updateScanBox);
@@ -566,6 +650,7 @@
       statusInput.value = "待整理";
       photoData = "";
       photoName = "";
+      resetClassification();
       preview.src = "";
       preview.classList.add("hidden");
       captureBtn.classList.remove("hidden");
@@ -632,6 +717,7 @@
       rescanBtn.classList.add("hidden");
       retryCameraBtn.classList.add("hidden");
       showMessage("請確認照片清楚，再按確定上傳", "ok");
+      classifyLabelPhoto();
     }
 
     async function retakePhoto() {
@@ -639,6 +725,7 @@
 
       photoData = "";
       photoName = "";
+      resetClassification();
       preview.src = "";
       preview.classList.add("hidden");
       captureBtn.classList.remove("hidden");
@@ -671,6 +758,11 @@
       params.append("timestamp", now.toISOString());
       params.append("photoName", photoName);
       params.append("photoData", photoData);
+      params.append("sort_area", selectedSortArea);
+      params.append("ai_sort_area", aiSortArea);
+      params.append("ai_confidence", aiConfidence);
+      params.append("ai_reason", aiReason);
+      params.append("ai_classified_at", aiClassifiedAt);
 
       params.append("packageNo", "");
       params.append("productName", "");
@@ -720,6 +812,120 @@
       }
     }
 
+    async function classifyLabelPhoto() {
+      if (!photoData) return;
+
+      const runId = ++classifyRunId;
+      aiCard.classList.remove("hidden");
+      aiCategory.textContent = "分類中...";
+      aiDetail.textContent = "AI 正在讀取標籤，最多等 3 秒。";
+      showMessage("AI 分類中，可先確認照片；逾時也能上傳", "warn");
+
+      const params = new URLSearchParams();
+      params.append("mode", "classifyLabel");
+      params.append("imageData", photoData);
+
+      const timeout = new Promise(function(resolve) {
+        setTimeout(function() {
+          resolve({
+            status: "timeout",
+            sort_area: "待分類",
+            confidence: "low",
+            reason: "AI 分類超過 3 秒，先保留待分類"
+          });
+        }, 3000);
+      });
+
+      const request = fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: params
+      })
+        .then(function(response) {
+          return response.text();
+        })
+        .then(function(text) {
+          return JSON.parse(text);
+        })
+        .catch(function(error) {
+          return {
+            status: "error",
+            sort_area: "待分類",
+            confidence: "low",
+            reason: error.message
+          };
+        });
+
+      const data = await Promise.race([request, timeout]);
+
+      if (runId !== classifyRunId || !photoData) {
+        return;
+      }
+
+      if (data.status === "success" && data.sort_area) {
+        aiSortArea = data.sort_area;
+        aiConfidence = data.confidence || "low";
+        aiReason = data.reason || "";
+        aiClassifiedAt = new Date().toISOString();
+        setSelectedCategory(aiSortArea);
+        renderAiResult(aiSortArea, aiConfidence, aiReason, data.product_hint || "", data.elapsed_ms || 0);
+        showMessage("AI 已建議分貨區，可直接上傳或手動改分類", "ok");
+        return;
+      }
+
+      aiSortArea = "";
+      aiConfidence = data.confidence || "low";
+      aiReason = data.reason || data.message || "AI 分類未完成";
+      aiClassifiedAt = "";
+      setSelectedCategory("待分類");
+      renderAiResult("待分類", aiConfidence, aiReason, "", data.elapsed_ms || 0);
+      showMessage("AI 分類未完成，仍可直接上傳", "warn");
+    }
+
+    function renderAiResult(area, confidence, reason, hint, elapsedMs) {
+      aiCard.classList.remove("hidden");
+      aiCategory.textContent = area || "待分類";
+
+      const parts = [];
+
+      if (confidence) {
+        parts.push("信心：" + confidence);
+      }
+
+      if (elapsedMs) {
+        parts.push("後端：" + Math.round(elapsedMs / 100) / 10 + " 秒");
+      }
+
+      if (hint) {
+        parts.push("商品：" + hint);
+      }
+
+      if (reason) {
+        parts.push("原因：" + reason);
+      }
+
+      aiDetail.textContent = parts.join("｜") || "可手動改分類。";
+    }
+
+    function setSelectedCategory(category) {
+      selectedSortArea = category || "待分類";
+      categoryButtons.forEach(function(button) {
+        button.classList.toggle("active", button.dataset.category === selectedSortArea);
+      });
+    }
+
+    function resetClassification() {
+      classifyRunId++;
+      selectedSortArea = "待分類";
+      aiSortArea = "";
+      aiConfidence = "";
+      aiReason = "";
+      aiClassifiedAt = "";
+      setSelectedCategory("待分類");
+      aiCategory.textContent = "待分類";
+      aiDetail.textContent = "拍照後會自動分析標籤。";
+      aiCard.classList.add("hidden");
+    }
+
     function resetToScan() {
       isUploading = false;
       captureBtn.disabled = false;
@@ -728,6 +934,7 @@
       productUrl.value = "";
       photoData = "";
       photoName = "";
+      resetClassification();
       preview.src = "";
       preview.classList.add("hidden");
       captureBtn.classList.remove("hidden");

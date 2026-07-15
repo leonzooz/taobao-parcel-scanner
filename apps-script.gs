@@ -65,6 +65,11 @@ function handleUpload_(e) {
     var scanTime = params.scanTime || new Date().toLocaleString();
     var photoName = params.photoName || (new Date().getTime() + ".jpg");
     var photoData = params.photoData || "";
+    var sortArea = params.sort_area || params.sortArea || "待分類";
+    var aiSortArea = params.ai_sort_area || params.aiSortArea || "";
+    var aiConfidence = params.ai_confidence || params.aiConfidence || "";
+    var aiReason = params.ai_reason || params.aiReason || "";
+    var aiClassifiedAt = params.ai_classified_at || params.aiClassifiedAt || "";
 
     var photoUrl = "";
     var photoFileId = "";
@@ -112,7 +117,12 @@ function handleUpload_(e) {
       "",
       "",
       "待抓圖",
-      "整理中"
+      "整理中",
+      sortArea,
+      aiSortArea,
+      aiConfidence,
+      aiReason,
+      aiClassifiedAt
     ]);
 
     return jsonOutput_({
@@ -880,7 +890,12 @@ function ensureHeaders_(sheet) {
     "商品首圖URL",
     "商品首圖FileID",
     "首圖狀態",
-    "客人展示狀態"
+    "客人展示狀態",
+    "現場分貨區",
+    "AI建議分貨區",
+    "AI信心",
+    "AI原因",
+    "AI分類時間"
   ];
 
   if (sheet.getLastRow() === 0) {
