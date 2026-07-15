@@ -40,7 +40,7 @@ function handleClassifyLabel_(params) {
       throw new Error("缺少 imageData");
     }
 
-    var result = classifyLabelWithOpenAI_(imageData);
+    var result = classifyLabelWithGemini_(imageData);
 
     result.status = "success";
     result.elapsed_ms = new Date().getTime() - startedAt;
@@ -505,10 +505,10 @@ function processAllPending() {
   processPendingProductImages();
 }
 
-function classifyLabelWithOpenAI_(imageData) {
-  var apiKey = getOpenAiApiKey_();
-  var model = PropertiesService.getScriptProperties().getProperty("OPENAI_MODEL") || "gpt-4.1-mini";
-  var dataUrl = normalizeImageDataUrl_(imageData);
+function classifyLabelWithGemini_(imageData) {
+  var apiKey = getGeminiApiKey_();
+  var model = PropertiesService.getScriptProperties().getProperty("GEMINI_MODEL") || "gemini-3.5-flash";
+  var imageInfo = getGeminiInlineImage_(imageData);
   var prompt = [
     "你是倉庫分貨員的助手。請看淘寶包裹標籤照片，讀取標籤上的中文商品資訊，判斷現場分貨大類。",
     "只能從以下 sort_area 選一個：衣鞋包、家居電器、3C數碼、美妝個護、母嬰兒童、文具樂器、其他。",
@@ -521,28 +521,27 @@ function classifyLabelWithOpenAI_(imageData) {
     model: model,
     input: [
       {
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: prompt
-          },
-          {
-            type: "input_image",
-            image_url: dataUrl
-          }
-        ]
+        type: "text",
+        text: prompt
+      },
+      {
+        type: "image",
+        data: imageInfo.base64,
+        mime_type: imageInfo.mimeType
       }
     ],
-    max_output_tokens: 220
+    response_format: {
+      type: "text",
+      mime_type: "application/json"
+    }
   };
 
-  var response = UrlFetchApp.fetch("https://api.openai.com/v1/responses", {
+  var response = UrlFetchApp.fetch("https://generativelanguage.googleapis.com/v1beta/interactions", {
     method: "post",
     muteHttpExceptions: true,
     contentType: "application/json",
     headers: {
-      Authorization: "Bearer " + apiKey
+      "x-goog-api-key": apiKey
     },
     payload: JSON.stringify(payload)
   });
@@ -551,11 +550,11 @@ function classifyLabelWithOpenAI_(imageData) {
   var text = response.getContentText();
 
   if (code < 200 || code >= 300) {
-    throw new Error("OpenAI API error " + code + ": " + text);
+    throw new Error("Gemini API error " + code + ": " + text);
   }
 
   var data = JSON.parse(text);
-  var outputText = extractOpenAIOutputText_(data);
+  var outputText = extractGeminiOutputText_(data);
   var parsed = parseJsonFromText_(outputText);
   var normalized = normalizeClassification_(parsed);
 
@@ -564,11 +563,11 @@ function classifyLabelWithOpenAI_(imageData) {
   return normalized;
 }
 
-function getOpenAiApiKey_() {
-  var apiKey = PropertiesService.getScriptProperties().getProperty("OPENAI_API_KEY");
+function getGeminiApiKey_() {
+  var apiKey = PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY");
 
   if (!apiKey) {
-    throw new Error("請先在 Apps Script Script Properties 設定 OPENAI_API_KEY");
+    throw new Error("請先在 Apps Script Script Properties 設定 GEMINI_API_KEY");
   }
 
   return apiKey;
@@ -584,20 +583,52 @@ function normalizeImageDataUrl_(imageData) {
   return "data:image/jpeg;base64," + value;
 }
 
-function extractOpenAIOutputText_(data) {
+function getGeminiInlineImage_(imageData) {
+  var dataUrl = normalizeImageDataUrl_(imageData);
+  var match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/);
+
+  if (!match) {
+    throw new Error("圖片格式錯誤，無法送 Gemini 分類");
+  }
+
+  return {
+    mimeType: match[1],
+    base64: match[2]
+  };
+}
+
+function extractGeminiOutputText_(data) {
   if (data.output_text) {
     return data.output_text;
   }
 
   var parts = [];
-  var output = data.output || [];
 
-  for (var i = 0; i < output.length; i++) {
-    var content = output[i].content || [];
+  if (data.output && data.output.length) {
+    for (var i = 0; i < data.output.length; i++) {
+      if (data.output[i].text) {
+        parts.push(data.output[i].text);
+      }
 
-    for (var j = 0; j < content.length; j++) {
-      if (content[j].text) {
-        parts.push(content[j].text);
+      var content = data.output[i].content || [];
+      for (var j = 0; j < content.length; j++) {
+        if (content[j].text) {
+          parts.push(content[j].text);
+        }
+      }
+    }
+  }
+
+  if (data.candidates && data.candidates.length) {
+    for (var k = 0; k < data.candidates.length; k++) {
+      var candidateParts = data.candidates[k].content && data.candidates[k].content.parts
+        ? data.candidates[k].content.parts
+        : [];
+
+      for (var m = 0; m < candidateParts.length; m++) {
+        if (candidateParts[m].text) {
+          parts.push(candidateParts[m].text);
+        }
       }
     }
   }
