@@ -512,9 +512,11 @@ function classifyLabelWithGroq_(imageData) {
   var prompt = [
     "你是倉庫分貨員的助手。請看淘寶包裹標籤照片，讀取標籤上的中文商品資訊，判斷現場分貨大類。",
     "只能從以下 sort_area 選一個：衣鞋包、家居電器、3C數碼、美妝個護、母嬰兒童、文具樂器、其他。",
-    "規則：鞋、拖鞋、包、衣褲、帽、襪歸衣鞋包；燈、廚房電器、家用電器、收納、居家用品歸家居電器；手機配件、投影儀、相機、耳機、電子設備歸3C數碼；笛子、樂器、文具歸文具樂器。",
-    "如果看不清或不確定，sort_area 用其他，confidence 用 low。",
-    "只回傳 JSON，不要 markdown，不要解釋文字。格式：{\"sort_area\":\"家居電器\",\"confidence\":\"high\",\"reason\":\"標籤含 LED燈泡、小夜燈\",\"product_hint\":\"LED小夜燈\"}"
+    "判斷順序：第一優先讀標籤中「品类」或「品類」後面的文字，作為 source_category；常見位置在「重量:0 价格:xx.xx 品类xxxx」這一行。",
+    "如果 source_category 可讀，必須優先用 source_category 判斷 sort_area；只有讀不到品类/品類時，才用商品名稱判斷。",
+    "對應規則：內搭、襪、足球襪、鞋、拖鞋、包、衣、褲、帽歸衣鞋包；破壁機、卷紙器、紙巾架、燈、廚房電器、家用電器、收納、居家用品歸家居電器；手機配件、投影儀、相機、耳機、電子設備歸3C數碼；笛子、樂器、文具歸文具樂器；美妝、護膚、化妝品歸美妝個護；嬰兒、兒童、奶瓶、玩具歸母嬰兒童。",
+    "如果品类文字與商品名稱衝突，以品类文字優先；如果看不清或不確定，sort_area 用其他，confidence 用 low。",
+    "只回傳 JSON，不要 markdown，不要解釋文字。格式：{\"sort_area\":\"衣鞋包\",\"confidence\":\"high\",\"reason\":\"品类=足球袜 → 衣鞋包\",\"product_hint\":\"春夏薄款兒童足球襪\",\"source_category\":\"足球袜\"}"
   ].join("\n");
 
   var payload = {
@@ -634,7 +636,8 @@ function normalizeClassification_(parsed) {
     sort_area: sortArea,
     confidence: confidence,
     reason: parsed.reason || "",
-    product_hint: parsed.product_hint || ""
+    product_hint: parsed.product_hint || "",
+    source_category: parsed.source_category || ""
   };
 }
 

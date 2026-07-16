@@ -957,7 +957,7 @@
         aiReason = data.reason || "";
         aiClassifiedAt = new Date().toISOString();
         setSelectedCategory(aiSortArea);
-        renderAiResult(aiSortArea, aiConfidence, aiReason, data.product_hint || "", data.elapsed_ms || 0);
+        renderAiResult(aiSortArea, aiConfidence, aiReason, data.product_hint || "", data.elapsed_ms || 0, data.source_category || "");
         showMessage("AI 已建議分貨區，可直接上傳或手動改分類", "ok");
         return;
       }
@@ -971,7 +971,7 @@
       showMessage("AI 分類未完成，仍可直接上傳", "warn");
     }
 
-    function renderAiResult(area, confidence, reason, hint, elapsedMs) {
+    function renderAiResult(area, confidence, reason, hint, elapsedMs, sourceCategory) {
       aiCard.classList.remove("hidden");
       aiCategory.textContent = area || "待分類";
 
@@ -987,6 +987,10 @@
 
       if (hint) {
         parts.push("商品：" + hint);
+      }
+
+      if (sourceCategory) {
+        parts.push("品類：" + sourceCategory);
       }
 
       if (reason) {
