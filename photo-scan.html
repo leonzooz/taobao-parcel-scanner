@@ -1,0 +1,1109 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>拍照辨識分貨測試</title>
+  <script src="https://unpkg.com/jsqr/dist/jsQR.js"></script>
+  <style>
+    :root {
+      --bg: #071019;
+      --panel: #101a25;
+      --panel2: #172536;
+      --text: #edf6ff;
+      --muted: #96a8bb;
+      --line: #2a3a50;
+      --accent: #22b8ff;
+      --ok: #45d48d;
+      --warn: #ffcc66;
+      --bad: #ff7070;
+      --shade: rgba(0, 0, 0, .58);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", Arial, sans-serif;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 540px;
+      margin: 0 auto;
+      padding: 10px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .pill {
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 10px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .camera-card {
+      position: relative;
+      overflow: hidden;
+      min-height: 72vh;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #02060a;
+    }
+
+    #camera {
+      width: 100%;
+      height: 72vh;
+      object-fit: cover;
+      display: block;
+      background: #02060a;
+    }
+
+    .scan-ui,
+    .photo-ui {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .review-preview {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #02060a;
+      z-index: 4;
+    }
+
+    .camera-action,
+    .review-actions {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      z-index: 5;
+      pointer-events: auto;
+    }
+
+    .review-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .sort-overlay {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: 82px;
+      z-index: 6;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 8px;
+      align-items: center;
+      min-height: 56px;
+      border: 1px solid rgba(69, 212, 141, .55);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: rgba(7, 16, 25, .9);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+      pointer-events: none;
+    }
+
+    .sort-overlay-label {
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .sort-overlay-value {
+      color: var(--ok);
+      font-size: 24px;
+      font-weight: 900;
+      line-height: 1.1;
+      text-align: right;
+    }
+
+    .sort-overlay.pending {
+      border-color: rgba(255, 204, 102, .5);
+    }
+
+    .sort-overlay.pending .sort-overlay-value {
+      color: var(--warn);
+    }
+
+    .scan-mask {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background:
+        linear-gradient(var(--shade), var(--shade)) top / 100% calc(var(--box-top) * 1px) no-repeat,
+        linear-gradient(var(--shade), var(--shade)) left calc(var(--box-top) * 1px) / calc(var(--box-left) * 1px) calc(var(--box-size) * 1px) no-repeat,
+        linear-gradient(var(--shade), var(--shade)) right calc(var(--box-top) * 1px) / calc(100% - (var(--box-left) + var(--box-size)) * 1px) calc(var(--box-size) * 1px) no-repeat,
+        linear-gradient(var(--shade), var(--shade)) bottom / 100% calc(100% - (var(--box-top) + var(--box-size)) * 1px) no-repeat;
+    }
+
+    .scan-box {
+      position: absolute;
+      left: calc(var(--box-left) * 1px);
+      top: calc(var(--box-top) * 1px);
+      width: calc(var(--box-size) * 1px);
+      height: calc(var(--box-size) * 1px);
+      border: 4px solid #fff;
+      border-radius: 8px;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, .28), 0 0 20px rgba(34, 184, 255, .34);
+    }
+
+    .scan-box::before,
+    .scan-box::after {
+      content: "";
+      position: absolute;
+      left: 16px;
+      right: 16px;
+      height: 2px;
+      background: rgba(34, 184, 255, .75);
+    }
+
+    .scan-box::before {
+      top: 50%;
+    }
+
+    .scan-box::after {
+      display: none;
+    }
+
+    .guide {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: rgba(16, 26, 37, .88);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.45;
+      pointer-events: none;
+    }
+
+    .photo-ui .guide {
+      top: 12px;
+      bottom: auto;
+    }
+
+    .message {
+      margin-top: 10px;
+      padding: 11px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel2);
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.45;
+    }
+
+    .message.ok {
+      color: var(--ok);
+      border-color: rgba(69, 212, 141, .45);
+    }
+
+    .message.warn {
+      color: var(--warn);
+      border-color: rgba(255, 204, 102, .45);
+    }
+
+    .message.bad {
+      color: var(--bad);
+      border-color: rgba(255, 112, 112, .45);
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    button {
+      width: 100%;
+      min-height: 56px;
+      border: 0;
+      border-radius: 8px;
+      padding: 13px 14px;
+      background: var(--accent);
+      color: #03131d;
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      color: var(--text);
+      background: var(--panel2);
+      border: 1px solid var(--line);
+    }
+
+    button:disabled {
+      opacity: .62;
+      cursor: not-allowed;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .photo-panel {
+      display: grid;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    textarea,
+    select {
+      width: 100%;
+      min-height: 48px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 11px 12px;
+      background: #0d1621;
+      color: var(--text);
+      font: inherit;
+      outline: none;
+    }
+
+    textarea {
+      min-height: 70px;
+      resize: vertical;
+      color: var(--muted);
+      word-break: break-all;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .ai-card {
+      display: grid;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel2);
+      padding: 12px;
+    }
+
+    .ai-title {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .ai-category {
+      color: var(--ok);
+      font-size: 24px;
+      font-weight: 900;
+      line-height: 1.2;
+    }
+
+    .ai-detail {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .category-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .category-btn {
+      min-height: 48px;
+      color: var(--text);
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      padding: 10px 8px;
+      font-size: 15px;
+    }
+
+    .category-btn.active {
+      color: #03131d;
+      background: var(--ok);
+      border-color: var(--ok);
+    }
+
+    @media (max-width: 390px) {
+      .app {
+        padding: 8px;
+      }
+
+      #camera,
+      .camera-card {
+        min-height: 70vh;
+        height: 70vh;
+      }
+
+      .controls {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <div class="topbar">
+      <h1>拍照辨識分貨</h1>
+      <div class="pill" id="mode">拍標籤</div>
+    </div>
+
+    <section class="camera-card" id="camera-card">
+      <video id="camera" playsinline muted autoplay></video>
+
+      <div id="scan-ui" class="scan-ui">
+        <div class="scan-mask"></div>
+        <div class="scan-box"></div>
+        <div class="guide">測試頁：請直接拍整張標籤，系統會從照片左下區域找淘寶 QR。</div>
+      </div>
+
+      <div id="photo-ui" class="photo-ui hidden">
+        <div class="guide">請把整張標籤放進畫面，左下淘寶 QR 要清楚可見。</div>
+      </div>
+
+      <img id="preview" class="review-preview hidden" alt="標籤照片預覽" />
+
+      <div id="sort-overlay" class="sort-overlay pending hidden">
+        <div class="sort-overlay-label">分貨區</div>
+        <div id="sort-overlay-value" class="sort-overlay-value">待分類</div>
+      </div>
+
+      <div id="camera-action" class="camera-action hidden">
+        <button id="capture-btn" type="button">拍照辨識</button>
+      </div>
+
+      <div id="review-actions" class="review-actions hidden">
+        <button id="retake-btn" class="secondary" type="button">重拍</button>
+        <button id="upload-btn" type="button">確定上傳</button>
+      </div>
+    </section>
+
+    <div id="message" class="message">正在啟動相機...</div>
+
+    <div id="scan-controls" class="controls hidden">
+      <button id="start-btn" class="secondary hidden" type="button">啟動相機</button>
+    </div>
+
+    <section id="photo-panel" class="photo-panel hidden">
+      <label>
+        商品連結
+        <textarea id="product-url" readonly></textarea>
+      </label>
+
+      <label>
+        狀態
+        <select id="status">
+          <option value="待整理" selected>待整理</option>
+          <option value="待售">待售</option>
+          <option value="問題件">問題件</option>
+        </select>
+      </label>
+
+      <section id="ai-card" class="ai-card hidden">
+        <div class="ai-title">AI 建議分貨區</div>
+        <div id="ai-category" class="ai-category">待分類</div>
+        <div id="ai-detail" class="ai-detail">拍照後會自動分析標籤。</div>
+      </section>
+
+      <label>
+        現場分貨區
+        <div id="category-grid" class="category-grid">
+          <button class="category-btn active" type="button" data-category="待分類">待分類</button>
+          <button class="category-btn" type="button" data-category="衣鞋包">衣鞋包</button>
+          <button class="category-btn" type="button" data-category="家居電器">家居電器</button>
+          <button class="category-btn" type="button" data-category="3C數碼">3C數碼</button>
+          <button class="category-btn" type="button" data-category="美妝個護">美妝個護</button>
+          <button class="category-btn" type="button" data-category="母嬰兒童">母嬰兒童</button>
+          <button class="category-btn" type="button" data-category="文具樂器">文具樂器</button>
+          <button class="category-btn" type="button" data-category="其他">其他</button>
+        </div>
+      </label>
+
+      <div class="controls">
+        <button id="rescan-btn" class="secondary" type="button">重掃 QR</button>
+        <button id="retry-camera-btn" class="secondary" type="button">重開相機</button>
+      </div>
+    </section>
+  </main>
+
+  <canvas id="work-canvas" class="hidden"></canvas>
+
+  <script>
+    const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzWWBupdwuar1EvO0qsXAehBawmt_TQk7faI9mYaNdBT6bWwFxqiEOJD5xwWWLVikWy/exec";
+
+    const cameraCard = document.getElementById("camera-card");
+    const camera = document.getElementById("camera");
+    const mode = document.getElementById("mode");
+    const scanUi = document.getElementById("scan-ui");
+    const photoUi = document.getElementById("photo-ui");
+    const message = document.getElementById("message");
+    const scanControls = document.getElementById("scan-controls");
+    const cameraAction = document.getElementById("camera-action");
+    const reviewActions = document.getElementById("review-actions");
+    const startBtn = document.getElementById("start-btn");
+    const photoPanel = document.getElementById("photo-panel");
+    const productUrl = document.getElementById("product-url");
+    const statusInput = document.getElementById("status");
+    const captureBtn = document.getElementById("capture-btn");
+    const uploadBtn = document.getElementById("upload-btn");
+    const retakeBtn = document.getElementById("retake-btn");
+    const rescanBtn = document.getElementById("rescan-btn");
+    const retryCameraBtn = document.getElementById("retry-camera-btn");
+    const preview = document.getElementById("preview");
+    const sortOverlay = document.getElementById("sort-overlay");
+    const sortOverlayValue = document.getElementById("sort-overlay-value");
+    const aiCard = document.getElementById("ai-card");
+    const aiCategory = document.getElementById("ai-category");
+    const aiDetail = document.getElementById("ai-detail");
+    const categoryButtons = Array.from(document.querySelectorAll(".category-btn"));
+    const canvas = document.getElementById("work-canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+    let stream = null;
+    let scanTimer = null;
+    let currentMode = "photo";
+    const facingMode = "environment";
+    let lastRejectAt = 0;
+    let isUploading = false;
+    let photoData = "";
+    let classifyPhotoData = "";
+    let photoName = "";
+    let selectedSortArea = "待分類";
+    let aiSortArea = "";
+    let aiConfidence = "";
+    let aiReason = "";
+    let aiClassifiedAt = "";
+    let classifyRunId = 0;
+
+    startBtn.addEventListener("click", startCamera);
+    captureBtn.addEventListener("click", captureAndUpload);
+    uploadBtn.addEventListener("click", submitData);
+    retakeBtn.addEventListener("click", retakePhoto);
+    rescanBtn.addEventListener("click", resetToScan);
+    retryCameraBtn.addEventListener("click", startCamera);
+    categoryButtons.forEach(function(button) {
+      button.addEventListener("click", function() {
+        setSelectedCategory(button.dataset.category || "待分類");
+      });
+    });
+
+    window.addEventListener("load", function() {
+      setMode("photo");
+      startCamera();
+    });
+    window.addEventListener("resize", updateScanBox);
+    window.addEventListener("pagehide", stopCamera);
+    document.addEventListener("visibilitychange", function() {
+      if (document.hidden) stopCamera();
+    });
+
+    function showMessage(text, type) {
+      message.textContent = text;
+      message.className = "message" + (type ? " " + type : "");
+    }
+
+    function isTaobaoLink(value) {
+      const text = String(value || "").trim().toLowerCase();
+      return text.includes("taobao.com") ||
+        text.includes("item.taobao") ||
+        text.includes("m.tb.cn") ||
+        text.includes("tb.cn") ||
+        text.includes("tmall.com");
+    }
+
+    async function startCamera() {
+      if (isUploading) return;
+
+      stopScanLoop();
+      stopStream();
+      showMessage("正在啟動相機...", "");
+      startBtn.classList.add("hidden");
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: facingMode },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+        audio: false
+      });
+
+        camera.srcObject = stream;
+        await camera.play();
+        updateScanBox();
+
+        if (currentMode === "scan") {
+          startScanLoop();
+          showMessage("請把左下角淘寶 QR 放進白框", "");
+        } else {
+          showMessage("請把整張標籤放進畫面後拍照，系統會自動找左下淘寶 QR", "");
+        }
+      } catch (error) {
+        console.error(error);
+        startBtn.classList.remove("hidden");
+        showMessage("相機啟動失敗。請確認相機權限，並用 HTTPS 開啟頁面。", "bad");
+      }
+    }
+
+    function stopCamera() {
+      stopScanLoop();
+      stopStream();
+    }
+
+    function stopStream() {
+      if (stream) {
+        stream.getTracks().forEach(function(track) {
+          track.stop();
+        });
+        stream = null;
+      }
+      camera.srcObject = null;
+    }
+
+    function setMode(nextMode) {
+      currentMode = nextMode;
+      mode.textContent = nextMode === "scan" ? "掃左下 QR" : "拍標籤";
+      scanUi.classList.toggle("hidden", nextMode !== "scan");
+      photoUi.classList.toggle("hidden", nextMode !== "photo");
+      scanControls.classList.toggle("hidden", nextMode !== "scan");
+      photoPanel.classList.toggle("hidden", nextMode !== "photo");
+      cameraAction.classList.toggle("hidden", nextMode !== "photo");
+      reviewActions.classList.add("hidden");
+
+      if (nextMode === "scan") {
+        startScanLoop();
+      } else {
+        stopScanLoop();
+      }
+    }
+
+    function updateScanBox() {
+      const rect = cameraCard.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+
+      const size = Math.round(Math.min(rect.width * 0.42, rect.height * 0.32, 230));
+      const left = Math.round(rect.width * 0.08);
+      const top = Math.round(rect.height * 0.53);
+
+      cameraCard.style.setProperty("--box-size", size);
+      cameraCard.style.setProperty("--box-left", left);
+      cameraCard.style.setProperty("--box-top", top);
+    }
+
+    function startScanLoop() {
+      stopScanLoop();
+      if (currentMode !== "scan") return;
+      scanTimer = window.setInterval(scanLeftBox, 260);
+    }
+
+    function stopScanLoop() {
+      if (scanTimer) {
+        window.clearInterval(scanTimer);
+        scanTimer = null;
+      }
+    }
+
+    function scanLeftBox() {
+      if (currentMode !== "scan" || !camera.videoWidth || !camera.videoHeight || isUploading) return;
+
+      const cardRect = cameraCard.getBoundingClientRect();
+      const videoRect = camera.getBoundingClientRect();
+      const box = getScanBoxCss();
+
+      const videoRatio = camera.videoWidth / camera.videoHeight;
+      const elementRatio = videoRect.width / videoRect.height;
+
+      let drawnWidth;
+      let drawnHeight;
+      let offsetX = 0;
+      let offsetY = 0;
+
+      if (videoRatio > elementRatio) {
+        drawnHeight = videoRect.height;
+        drawnWidth = drawnHeight * videoRatio;
+        offsetX = (videoRect.width - drawnWidth) / 2;
+      } else {
+        drawnWidth = videoRect.width;
+        drawnHeight = drawnWidth / videoRatio;
+        offsetY = (videoRect.height - drawnHeight) / 2;
+      }
+
+      const boxLeftInVideo = box.left + cardRect.left - videoRect.left;
+      const boxTopInVideo = box.top + cardRect.top - videoRect.top;
+
+      const sx = Math.max(0, Math.round((boxLeftInVideo - offsetX) * camera.videoWidth / drawnWidth));
+      const sy = Math.max(0, Math.round((boxTopInVideo - offsetY) * camera.videoHeight / drawnHeight));
+      const sw = Math.min(camera.videoWidth - sx, Math.round(box.size * camera.videoWidth / drawnWidth));
+      const sh = Math.min(camera.videoHeight - sy, Math.round(box.size * camera.videoHeight / drawnHeight));
+
+      if (sw <= 0 || sh <= 0) return;
+
+      canvas.width = sw;
+      canvas.height = sh;
+      ctx.drawImage(camera, sx, sy, sw, sh, 0, 0, sw, sh);
+
+      const imageData = ctx.getImageData(0, 0, sw, sh);
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: "dontInvert"
+      });
+
+      if (!code || !code.data) return;
+
+      const scanned = String(code.data).trim();
+
+      if (!isTaobaoLink(scanned)) {
+        const now = Date.now();
+        if (now - lastRejectAt > 1000) {
+          lastRejectAt = now;
+          showMessage("框內不是淘寶商品 QR，請對準左下角", "warn");
+        }
+        return;
+      }
+
+      productUrl.value = scanned;
+      statusInput.value = "待整理";
+      photoData = "";
+      photoName = "";
+      resetClassification();
+      preview.src = "";
+      preview.classList.add("hidden");
+      captureBtn.classList.remove("hidden");
+      cameraAction.classList.remove("hidden");
+      reviewActions.classList.add("hidden");
+      uploadBtn.classList.add("hidden");
+      retakeBtn.classList.add("hidden");
+      rescanBtn.classList.remove("hidden");
+      retryCameraBtn.classList.remove("hidden");
+
+      setMode("photo");
+      showMessage("已取得淘寶連結，請拍整張標籤", "ok");
+    }
+
+    function getScanBoxCss() {
+      return {
+        left: parseFloat(cameraCard.style.getPropertyValue("--box-left")) || 0,
+        top: parseFloat(cameraCard.style.getPropertyValue("--box-top")) || 0,
+        size: parseFloat(cameraCard.style.getPropertyValue("--box-size")) || 180
+      };
+    }
+
+    function findTaobaoQrInCurrentCanvas(width, height) {
+      const regions = [
+        { x: 0.00, y: 0.45, w: 0.58, h: 0.52 },
+        { x: 0.00, y: 0.35, w: 0.68, h: 0.62 },
+        { x: 0.05, y: 0.38, w: 0.58, h: 0.55 },
+        { x: 0.00, y: 0.50, w: 0.50, h: 0.45 },
+        { x: 0.00, y: 0.30, w: 0.75, h: 0.68 },
+        { x: 0.00, y: 0.42, w: 1.00, h: 0.55 }
+      ];
+
+      for (let i = 0; i < regions.length; i++) {
+        const region = regions[i];
+        const sx = Math.max(0, Math.round(width * region.x));
+        const sy = Math.max(0, Math.round(height * region.y));
+        const sw = Math.min(width - sx, Math.round(width * region.w));
+        const sh = Math.min(height - sy, Math.round(height * region.h));
+
+        if (sw < 80 || sh < 80) continue;
+
+        const imageData = ctx.getImageData(sx, sy, sw, sh);
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: "attemptBoth"
+        });
+
+        if (code && code.data && isTaobaoLink(code.data)) {
+          return String(code.data).trim();
+        }
+      }
+
+      return "";
+    }
+
+    function captureAndUpload() {
+      if (isUploading) return;
+
+      if (!camera.videoWidth || !camera.videoHeight) {
+        showMessage("相機尚未準備好，請稍等", "warn");
+        return;
+      }
+
+      const maxSide = 1280;
+      let width = camera.videoWidth;
+      let height = camera.videoHeight;
+
+      if (width >= height && width > maxSide) {
+        height = Math.round(height * maxSide / width);
+        width = maxSide;
+      } else if (height > width && height > maxSide) {
+        width = Math.round(width * maxSide / height);
+        height = maxSide;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      ctx.drawImage(camera, 0, 0, width, height);
+
+      const scannedUrl = findTaobaoQrInCurrentCanvas(width, height);
+      photoData = canvas.toDataURL("image/jpeg", 0.74);
+
+      if (!scannedUrl) {
+        photoName = "label-" + Date.now() + ".jpg";
+        preview.src = photoData;
+        preview.classList.remove("hidden");
+        updateSortOverlay("找不到淘寶 QR", true);
+        sortOverlay.classList.remove("hidden");
+
+        stopStream();
+        captureBtn.classList.add("hidden");
+        cameraAction.classList.add("hidden");
+        reviewActions.classList.remove("hidden");
+        uploadBtn.classList.add("hidden");
+        retakeBtn.classList.remove("hidden");
+        rescanBtn.classList.add("hidden");
+        retryCameraBtn.classList.add("hidden");
+        showMessage("照片中沒有讀到左下淘寶 QR，請重拍。拍攝時讓左下 QR 更大、更清楚。", "bad");
+        return;
+      }
+
+      productUrl.value = scannedUrl;
+      statusInput.value = "待整理";
+
+      const aiMaxSide = 900;
+      let aiWidth = width;
+      let aiHeight = height;
+
+      if (aiWidth >= aiHeight && aiWidth > aiMaxSide) {
+        aiHeight = Math.round(aiHeight * aiMaxSide / aiWidth);
+        aiWidth = aiMaxSide;
+      } else if (aiHeight > aiWidth && aiHeight > aiMaxSide) {
+        aiWidth = Math.round(aiWidth * aiMaxSide / aiHeight);
+        aiHeight = aiMaxSide;
+      }
+
+      canvas.width = aiWidth;
+      canvas.height = aiHeight;
+      ctx.drawImage(camera, 0, 0, aiWidth, aiHeight);
+      classifyPhotoData = canvas.toDataURL("image/jpeg", 0.62);
+
+      photoName = "label-" + Date.now() + ".jpg";
+      preview.src = photoData;
+      preview.classList.remove("hidden");
+      updateSortOverlay("分類中", true);
+      sortOverlay.classList.remove("hidden");
+
+      stopStream();
+      captureBtn.classList.add("hidden");
+      cameraAction.classList.add("hidden");
+      reviewActions.classList.remove("hidden");
+      uploadBtn.classList.remove("hidden");
+      retakeBtn.classList.remove("hidden");
+      rescanBtn.classList.add("hidden");
+      retryCameraBtn.classList.add("hidden");
+      showMessage("已從照片取得淘寶連結，請確認照片清楚後上傳", "ok");
+      classifyLabelPhoto();
+    }
+
+    async function retakePhoto() {
+      if (isUploading) return;
+
+      photoData = "";
+      classifyPhotoData = "";
+      photoName = "";
+      updateSortOverlay("待分類", true);
+      sortOverlay.classList.add("hidden");
+      resetClassification();
+      preview.src = "";
+      preview.classList.add("hidden");
+      captureBtn.classList.remove("hidden");
+      cameraAction.classList.remove("hidden");
+      reviewActions.classList.add("hidden");
+      uploadBtn.classList.add("hidden");
+      retakeBtn.classList.add("hidden");
+      rescanBtn.classList.remove("hidden");
+      retryCameraBtn.classList.remove("hidden");
+      showMessage("請把整張標籤放進畫面後拍照", "");
+      await startCamera();
+    }
+
+    async function submitData() {
+      isUploading = true;
+      captureBtn.disabled = true;
+      uploadBtn.disabled = true;
+      retakeBtn.disabled = true;
+      showMessage("正在上傳...", "");
+
+      const now = new Date();
+      const params = new URLSearchParams();
+
+      params.append("mode", "staff");
+      params.append("productUrl", productUrl.value.trim());
+      params.append("product_url", productUrl.value.trim());
+      params.append("status", statusInput.value);
+      params.append("ocrStatus", "待 OCR");
+      params.append("scanTime", now.toLocaleString("zh-TW", { hour12: false }));
+      params.append("timestamp", now.toISOString());
+      params.append("photoName", photoName);
+      params.append("photoData", photoData);
+      params.append("sort_area", selectedSortArea);
+      params.append("ai_sort_area", aiSortArea);
+      params.append("ai_confidence", aiConfidence);
+      params.append("ai_reason", aiReason);
+      params.append("ai_classified_at", aiClassifiedAt);
+
+      params.append("packageNo", "");
+      params.append("productName", "");
+      params.append("product_name", "");
+      params.append("spec", "");
+      params.append("category", "");
+      params.append("originalPrice", "");
+      params.append("original_price", "");
+      params.append("suggestedPrice", "");
+
+      try {
+        const response = await fetch(APPS_SCRIPT_URL, {
+          method: "POST",
+          body: params
+        });
+        const text = await response.text();
+
+        if (response.ok && !/error|fail|失敗/i.test(text)) {
+          showMessage("上傳成功，準備掃下一件", "ok");
+          setTimeout(resetToScan, 700);
+        } else {
+          isUploading = false;
+          captureBtn.disabled = false;
+          uploadBtn.disabled = false;
+          retakeBtn.disabled = false;
+          showMessage("上傳可能失敗：" + text, "bad");
+        }
+      } catch (error) {
+        console.warn(error);
+
+        try {
+          await fetch(APPS_SCRIPT_URL, {
+            method: "POST",
+            mode: "no-cors",
+            body: params
+          });
+          showMessage("已送出，準備掃下一件", "ok");
+          setTimeout(resetToScan, 700);
+        } catch (error2) {
+          console.error(error2);
+          isUploading = false;
+          captureBtn.disabled = false;
+          uploadBtn.disabled = false;
+          retakeBtn.disabled = false;
+          showMessage("上傳出錯：" + error2.message, "bad");
+        }
+      }
+    }
+
+    async function classifyLabelPhoto() {
+      if (!photoData) return;
+
+      const runId = ++classifyRunId;
+      aiCard.classList.remove("hidden");
+      aiCategory.textContent = "分類中...";
+      aiDetail.textContent = "AI 正在讀取標籤，最多等 3 秒。";
+      showMessage("AI 分類中，可先確認照片；逾時也能上傳", "warn");
+
+      const params = new URLSearchParams();
+      params.append("mode", "classifyLabel");
+      params.append("imageData", classifyPhotoData || photoData);
+
+      const timeout = new Promise(function(resolve) {
+        setTimeout(function() {
+          resolve({
+            status: "timeout",
+            sort_area: "待分類",
+            confidence: "low",
+            reason: "AI 分類超過 3 秒，先保留待分類"
+          });
+        }, 3000);
+      });
+
+      const request = fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        body: params
+      })
+        .then(function(response) {
+          return response.text();
+        })
+        .then(function(text) {
+          try {
+            return JSON.parse(text);
+          } catch (error) {
+            return {
+              status: "error",
+              sort_area: "待分類",
+              confidence: "low",
+              reason: text || error.message
+            };
+          }
+        })
+        .catch(function(error) {
+          return {
+            status: "error",
+            sort_area: "待分類",
+            confidence: "low",
+            reason: error.message
+          };
+        });
+
+      const data = await Promise.race([request, timeout]);
+
+      if (runId !== classifyRunId || !photoData) {
+        return;
+      }
+
+      reviewActions.classList.remove("hidden");
+      uploadBtn.classList.remove("hidden");
+      retakeBtn.classList.remove("hidden");
+
+      if (!isUploading) {
+        uploadBtn.disabled = false;
+        retakeBtn.disabled = false;
+      }
+
+      if (data.status === "success" && data.sort_area) {
+        aiSortArea = data.sort_area;
+        aiConfidence = data.confidence || "low";
+        aiReason = data.reason || "";
+        aiClassifiedAt = new Date().toISOString();
+        setSelectedCategory(aiSortArea);
+        renderAiResult(aiSortArea, aiConfidence, aiReason, data.product_hint || "", data.elapsed_ms || 0);
+        showMessage("AI 已建議分貨區，可直接上傳或手動改分類", "ok");
+        return;
+      }
+
+      aiSortArea = "待分類";
+      aiConfidence = data.confidence || "low";
+      aiReason = data.reason || data.message || "AI 分類未完成";
+      aiClassifiedAt = new Date().toISOString();
+      setSelectedCategory("待分類");
+      renderAiResult("待分類", aiConfidence, aiReason, "", data.elapsed_ms || 0);
+      showMessage("AI 分類未完成，仍可直接上傳", "warn");
+    }
+
+    function renderAiResult(area, confidence, reason, hint, elapsedMs) {
+      aiCard.classList.remove("hidden");
+      aiCategory.textContent = area || "待分類";
+
+      const parts = [];
+
+      if (confidence) {
+        parts.push("信心：" + confidence);
+      }
+
+      if (elapsedMs) {
+        parts.push("後端：" + Math.round(elapsedMs / 100) / 10 + " 秒");
+      }
+
+      if (hint) {
+        parts.push("商品：" + hint);
+      }
+
+      if (reason) {
+        parts.push("原因：" + reason);
+      }
+
+      aiDetail.textContent = parts.join("｜") || "可手動改分類。";
+    }
+
+    function setSelectedCategory(category) {
+      selectedSortArea = category || "待分類";
+      categoryButtons.forEach(function(button) {
+        button.classList.toggle("active", button.dataset.category === selectedSortArea);
+      });
+      updateSortOverlay(selectedSortArea, selectedSortArea === "待分類" || selectedSortArea === "分類中");
+    }
+
+    function updateSortOverlay(category, isPending) {
+      sortOverlayValue.textContent = category || "待分類";
+      sortOverlay.classList.toggle("pending", !!isPending);
+    }
+
+    function resetClassification() {
+      classifyRunId++;
+      selectedSortArea = "待分類";
+      aiSortArea = "";
+      aiConfidence = "";
+      aiReason = "";
+      aiClassifiedAt = "";
+      setSelectedCategory("待分類");
+      updateSortOverlay("待分類", true);
+      aiCategory.textContent = "待分類";
+      aiDetail.textContent = "拍照後會自動分析標籤。";
+      aiCard.classList.add("hidden");
+    }
+
+    function resetToScan() {
+      isUploading = false;
+      captureBtn.disabled = false;
+      uploadBtn.disabled = false;
+      retakeBtn.disabled = false;
+      productUrl.value = "";
+      photoData = "";
+      classifyPhotoData = "";
+      photoName = "";
+      updateSortOverlay("待分類", true);
+      sortOverlay.classList.add("hidden");
+      resetClassification();
+      preview.src = "";
+      preview.classList.add("hidden");
+      captureBtn.classList.remove("hidden");
+      cameraAction.classList.remove("hidden");
+      reviewActions.classList.add("hidden");
+      uploadBtn.classList.add("hidden");
+      retakeBtn.classList.add("hidden");
+      rescanBtn.classList.add("hidden");
+      retryCameraBtn.classList.remove("hidden");
+      setMode("photo");
+      updateScanBox();
+      showMessage("請把整張標籤放進畫面後拍照，系統會自動找左下淘寶 QR", "");
+
+      if (!stream) {
+        startCamera();
+      }
+    }
+  </script>
+</body>
+</html>
