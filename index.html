@@ -455,6 +455,7 @@
     let lastRejectAt = 0;
     let isUploading = false;
     let photoData = "";
+    let classifyPhotoData = "";
     let photoName = "";
     let selectedSortArea = "待分類";
     let aiSortArea = "";
@@ -704,6 +705,24 @@
       ctx.drawImage(camera, 0, 0, width, height);
 
       photoData = canvas.toDataURL("image/jpeg", 0.74);
+
+      const aiMaxSide = 900;
+      let aiWidth = width;
+      let aiHeight = height;
+
+      if (aiWidth >= aiHeight && aiWidth > aiMaxSide) {
+        aiHeight = Math.round(aiHeight * aiMaxSide / aiWidth);
+        aiWidth = aiMaxSide;
+      } else if (aiHeight > aiWidth && aiHeight > aiMaxSide) {
+        aiWidth = Math.round(aiWidth * aiMaxSide / aiHeight);
+        aiHeight = aiMaxSide;
+      }
+
+      canvas.width = aiWidth;
+      canvas.height = aiHeight;
+      ctx.drawImage(camera, 0, 0, aiWidth, aiHeight);
+      classifyPhotoData = canvas.toDataURL("image/jpeg", 0.62);
+
       photoName = "label-" + Date.now() + ".jpg";
       preview.src = photoData;
       preview.classList.remove("hidden");
@@ -724,6 +743,7 @@
       if (isUploading) return;
 
       photoData = "";
+      classifyPhotoData = "";
       photoName = "";
       resetClassification();
       preview.src = "";
@@ -818,12 +838,12 @@
       const runId = ++classifyRunId;
       aiCard.classList.remove("hidden");
       aiCategory.textContent = "分類中...";
-      aiDetail.textContent = "AI 正在讀取標籤，最多等 3 秒。";
+      aiDetail.textContent = "AI 正在讀取標籤，最多等 8 秒。";
       showMessage("AI 分類中，可先確認照片；逾時也能上傳", "warn");
 
       const params = new URLSearchParams();
       params.append("mode", "classifyLabel");
-      params.append("imageData", photoData);
+      params.append("imageData", classifyPhotoData || photoData);
 
       const timeout = new Promise(function(resolve) {
         setTimeout(function() {
@@ -831,9 +851,9 @@
             status: "timeout",
             sort_area: "待分類",
             confidence: "low",
-            reason: "AI 分類超過 3 秒，先保留待分類"
+            reason: "AI 分類超過 8 秒，先保留待分類"
           });
-        }, 3000);
+        }, 8000);
       });
 
       const request = fetch(APPS_SCRIPT_URL, {
@@ -890,10 +910,10 @@
         return;
       }
 
-      aiSortArea = "";
+      aiSortArea = "待分類";
       aiConfidence = data.confidence || "low";
       aiReason = data.reason || data.message || "AI 分類未完成";
-      aiClassifiedAt = "";
+      aiClassifiedAt = new Date().toISOString();
       setSelectedCategory("待分類");
       renderAiResult("待分類", aiConfidence, aiReason, "", data.elapsed_ms || 0);
       showMessage("AI 分類未完成，仍可直接上傳", "warn");
@@ -951,6 +971,7 @@
       retakeBtn.disabled = false;
       productUrl.value = "";
       photoData = "";
+      classifyPhotoData = "";
       photoName = "";
       resetClassification();
       preview.src = "";
