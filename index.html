@@ -114,6 +114,47 @@
       gap: 10px;
     }
 
+    .sort-overlay {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: 82px;
+      z-index: 6;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 8px;
+      align-items: center;
+      min-height: 56px;
+      border: 1px solid rgba(69, 212, 141, .55);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: rgba(7, 16, 25, .9);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+      pointer-events: none;
+    }
+
+    .sort-overlay-label {
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .sort-overlay-value {
+      color: var(--ok);
+      font-size: 24px;
+      font-weight: 900;
+      line-height: 1.1;
+      text-align: right;
+    }
+
+    .sort-overlay.pending {
+      border-color: rgba(255, 204, 102, .5);
+    }
+
+    .sort-overlay.pending .sort-overlay-value {
+      color: var(--warn);
+    }
+
     .scan-mask {
       position: absolute;
       left: 0;
@@ -359,6 +400,11 @@
 
       <img id="preview" class="review-preview hidden" alt="標籤照片預覽" />
 
+      <div id="sort-overlay" class="sort-overlay pending hidden">
+        <div class="sort-overlay-label">分貨區</div>
+        <div id="sort-overlay-value" class="sort-overlay-value">待分類</div>
+      </div>
+
       <div id="camera-action" class="camera-action hidden">
         <button id="capture-btn" type="button">拍標籤照</button>
       </div>
@@ -441,6 +487,8 @@
     const rescanBtn = document.getElementById("rescan-btn");
     const retryCameraBtn = document.getElementById("retry-camera-btn");
     const preview = document.getElementById("preview");
+    const sortOverlay = document.getElementById("sort-overlay");
+    const sortOverlayValue = document.getElementById("sort-overlay-value");
     const aiCard = document.getElementById("ai-card");
     const aiCategory = document.getElementById("ai-category");
     const aiDetail = document.getElementById("ai-detail");
@@ -726,6 +774,8 @@
       photoName = "label-" + Date.now() + ".jpg";
       preview.src = photoData;
       preview.classList.remove("hidden");
+      updateSortOverlay("分類中", true);
+      sortOverlay.classList.remove("hidden");
 
       stopStream();
       captureBtn.classList.add("hidden");
@@ -745,6 +795,8 @@
       photoData = "";
       classifyPhotoData = "";
       photoName = "";
+      updateSortOverlay("待分類", true);
+      sortOverlay.classList.add("hidden");
       resetClassification();
       preview.src = "";
       preview.classList.add("hidden");
@@ -949,6 +1001,12 @@
       categoryButtons.forEach(function(button) {
         button.classList.toggle("active", button.dataset.category === selectedSortArea);
       });
+      updateSortOverlay(selectedSortArea, selectedSortArea === "待分類" || selectedSortArea === "分類中");
+    }
+
+    function updateSortOverlay(category, isPending) {
+      sortOverlayValue.textContent = category || "待分類";
+      sortOverlay.classList.toggle("pending", !!isPending);
     }
 
     function resetClassification() {
@@ -959,6 +1017,7 @@
       aiReason = "";
       aiClassifiedAt = "";
       setSelectedCategory("待分類");
+      updateSortOverlay("待分類", true);
       aiCategory.textContent = "待分類";
       aiDetail.textContent = "拍照後會自動分析標籤。";
       aiCard.classList.add("hidden");
@@ -973,6 +1032,8 @@
       photoData = "";
       classifyPhotoData = "";
       photoName = "";
+      updateSortOverlay("待分類", true);
+      sortOverlay.classList.add("hidden");
       resetClassification();
       preview.src = "";
       preview.classList.add("hidden");
