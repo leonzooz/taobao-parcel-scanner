@@ -39,6 +39,7 @@ function handlePackingUpload_(params) {
   try {
     var boxModel = String(params.boxModel || "").trim().toUpperCase();
     var photoData = params.photoData || "";
+    var operatorName = String(params.operatorName || params.operator || "").trim() || "未填寫";
 
     if (!/^(S60|S77|S105|S120|S150)$/.test(boxModel)) {
       throw new Error("紙箱型號不正確");
@@ -69,7 +70,8 @@ function handlePackingUpload_(params) {
       file.getId(),
       params.scanTime || now.toLocaleString("zh-TW", { hour12: false }),
       "已拍面籤",
-      "packing"
+      "packing",
+      operatorName
     ]);
 
     return jsonOutput_({
@@ -960,7 +962,8 @@ function ensurePackingHeaders_(sheet) {
     "面籤照片FileID",
     "掃描時間",
     "狀態",
-    "來源"
+    "來源",
+    "上傳人"
   ];
 
   if (sheet.getLastRow() === 0) {

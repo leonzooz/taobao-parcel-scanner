@@ -13,6 +13,7 @@
     h1 { margin:0; font-size:22px; line-height:1.2; }
     .top-actions { display:flex; align-items:center; gap:8px; }
     .pill { border:1px solid var(--line); border-radius:999px; padding:6px 10px; color:var(--muted); font-size:12px; white-space:nowrap; }
+    .operator { max-width:94px; min-height:32px; padding:5px 9px; overflow:hidden; border:1px solid var(--line); border-radius:999px; background:var(--panel2); color:var(--text); font-size:13px; font-weight:700; text-overflow:ellipsis; white-space:nowrap; }
     .restart { width:42px; min-width:42px; height:42px; min-height:42px; padding:0; border:1px solid var(--line); border-radius:50%; background:var(--panel2); color:var(--text); font-size:28px; line-height:1; }
     .nav-tabs { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
     .nav-tabs a { min-height:42px; display:flex; align-items:center; justify-content:center; border:1px solid var(--line); border-radius:8px; color:var(--muted); text-decoration:none; font-size:15px; font-weight:700; }
@@ -32,6 +33,10 @@
     .message { margin:16px 0 10px; min-height:56px; display:flex; align-items:center; padding:12px 16px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--muted); font-size:17px; line-height:1.4; }
     .message.ok { border-color:rgba(69,212,141,.65); color:var(--ok); }.message.warn { border-color:rgba(255,204,102,.65); color:var(--warn); }.message.bad { border-color:rgba(255,112,112,.65); color:var(--bad); }
     .selected-box { padding:14px 16px; border:1px solid var(--line); border-radius:8px; background:var(--panel); }.selected-box .label { color:var(--muted); font-size:14px; }.selected-box .value { margin-top:4px; color:var(--accent); font-size:28px; font-weight:800; }
+    .operator-dialog { position:fixed; z-index:20; inset:0; display:flex; align-items:center; justify-content:center; padding:20px; background:rgba(0,0,0,.68); }
+    .operator-card { width:min(100%,360px); padding:20px; border:1px solid var(--line); border-radius:8px; background:var(--panel); }
+    .operator-card h2 { margin:0 0 8px; font-size:21px; }.operator-card p { margin:0 0 16px; color:var(--muted); line-height:1.5; }
+    .operator-card input { width:100%; min-height:50px; margin-bottom:12px; padding:0 12px; border:1px solid var(--line); border-radius:8px; background:#071019; color:var(--text); font:inherit; font-size:18px; }
     .hidden { display:none !important; } #work-canvas { display:none; }
     @media (max-width:390px) { .app { padding:8px; } #camera,.camera-card { min-height:70vh; height:70vh; } .box-picker { width:82px; } .box-choice { min-height:42px; font-size:15px; } }
   </style>
@@ -40,7 +45,7 @@
   <main class="app">
     <div class="topbar">
       <h1>員工包貨拍照</h1>
-      <div class="top-actions"><div class="pill">拍寄件面籤</div><button id="restart-btn" class="restart" type="button" title="刷新相機" aria-label="刷新相機">↻</button></div>
+      <div class="top-actions"><button id="operator-btn" class="operator" type="button" title="切換作業員">設定人員</button><button id="restart-btn" class="restart" type="button" title="刷新相機" aria-label="刷新相機">↻</button></div>
     </div>
     <nav class="nav-tabs" aria-label="工作模式"><a class="active" href="./">包貨拍照</a><a href="taobao-scan.html">淘寶入庫</a></nav>
     <section class="camera-card">
@@ -60,6 +65,9 @@
     <div id="message" class="message">正在啟動相機...</div>
     <section id="selected-box" class="selected-box hidden"><div class="label">已選紙箱型號</div><div id="selected-box-value" class="value">-</div></section>
   </main>
+  <div id="operator-dialog" class="operator-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="operator-title">
+    <section class="operator-card"><h2 id="operator-title">設定作業員</h2><p>輸入姓名或代號。此裝置會記住目前人員，可隨時從頂部切換。</p><input id="operator-input" type="text" maxlength="30" autocomplete="name" placeholder="例如：小王、A01" /><button id="save-operator-btn" type="button" style="width:100%">開始拍照</button></section>
+  </div>
   <canvas id="work-canvas"></canvas>
   <script>
     const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzWWBupdwuar1EvO0qsXAehBawmt_TQk7faI9mYaNdBT6bWwFxqiEOJD5xwWWLVikWy/exec";
@@ -68,6 +76,10 @@
     const guide = document.getElementById("guide");
     const message = document.getElementById("message");
     const restartBtn = document.getElementById("restart-btn");
+    const operatorBtn = document.getElementById("operator-btn");
+    const operatorDialog = document.getElementById("operator-dialog");
+    const operatorInput = document.getElementById("operator-input");
+    const saveOperatorBtn = document.getElementById("save-operator-btn");
     const captureBtn = document.getElementById("capture-btn");
     const retakeBtn = document.getElementById("retake-btn");
     const uploadBtn = document.getElementById("upload-btn");
@@ -85,17 +97,39 @@
     let photoName = "";
     let boxModel = "";
     let isUploading = false;
+    let operatorName = localStorage.getItem("packingOperatorName") || "";
 
     restartBtn.addEventListener("click", restartCamera);
+    operatorBtn.addEventListener("click", showOperatorDialog);
+    saveOperatorBtn.addEventListener("click", saveOperator);
+    operatorInput.addEventListener("keydown", function(event) { if (event.key === "Enter") saveOperator(); });
     captureBtn.addEventListener("click", captureFaceLabel);
     retakeBtn.addEventListener("click", retakePhoto);
     uploadBtn.addEventListener("click", submitPacking);
     boxChoices.forEach(function(button) { button.addEventListener("click", function() { selectBox(button.dataset.box); }); });
-    window.addEventListener("load", startCamera);
+    window.addEventListener("load", function() { updateOperatorButton(); if (!operatorName) showOperatorDialog(); startCamera(); });
     window.addEventListener("pagehide", stopCamera);
     document.addEventListener("visibilitychange", function() { if (document.hidden) stopCamera(); });
 
     function showMessage(text, type) { message.textContent = text; message.className = "message" + (type ? " " + type : ""); }
+
+    function updateOperatorButton() { operatorBtn.textContent = operatorName || "設定人員"; }
+
+    function showOperatorDialog() {
+      operatorInput.value = operatorName;
+      operatorDialog.classList.remove("hidden");
+      window.setTimeout(function() { operatorInput.focus(); }, 50);
+    }
+
+    function saveOperator() {
+      const value = operatorInput.value.trim();
+      if (!value) { operatorInput.focus(); return; }
+      operatorName = value;
+      localStorage.setItem("packingOperatorName", operatorName);
+      updateOperatorButton();
+      operatorDialog.classList.add("hidden");
+      showMessage("目前作業員：" + operatorName, "ok");
+    }
 
     async function restartCamera() {
       if (isUploading) return;
@@ -133,6 +167,7 @@
 
     function captureFaceLabel() {
       if (isUploading) return;
+      if (!operatorName) { showOperatorDialog(); showMessage("請先設定作業員。", "warn"); return; }
       if (!camera.videoWidth || !camera.videoHeight) { showMessage("相機尚未準備好，請按右上角刷新相機。", "warn"); return; }
       let width = camera.videoWidth;
       let height = camera.videoHeight;
@@ -190,6 +225,7 @@
       const params = new URLSearchParams();
       params.append("mode", "packing");
       params.append("boxModel", boxModel);
+      params.append("operatorName", operatorName);
       params.append("photoName", photoName);
       params.append("photoData", photoData);
       params.append("scanTime", now.toLocaleString("zh-TW", { hour12:false }));
