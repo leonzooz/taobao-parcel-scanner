@@ -2,70 +2,11 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>員工包貨掃描</title>
-  <script src="https://unpkg.com/jsqr/dist/jsQR.js"></script>
-  <style>
-    :root { --bg:#071019; --panel:#101a25; --panel2:#172536; --text:#edf6ff; --muted:#96a8bb; --line:#2a3a50; --accent:#22b8ff; --ok:#45d48d; --warn:#ffcc66; --bad:#ff7070; --shade:rgba(0,0,0,.58); }
-    * { box-sizing:border-box; }
-    body { margin:0; min-height:100vh; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC",Arial,sans-serif; }
-    .app { width:100%; max-width:540px; margin:0 auto; padding:10px; }
-    .topbar { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
-    h1 { margin:0; font-size:22px; line-height:1.2; }
-    .pill { border:1px solid var(--line); border-radius:999px; padding:6px 10px; color:var(--muted); font-size:12px; white-space:nowrap; }
-    .camera-card { position:relative; overflow:hidden; min-height:72vh; border:1px solid var(--line); border-radius:8px; background:#02060a; }
-    #camera { width:100%; height:72vh; object-fit:cover; display:block; background:#02060a; }
-    .scan-ui,.photo-ui { position:absolute; inset:0; pointer-events:none; }
-    .scan-mask { position:absolute; inset:0; background:linear-gradient(var(--shade),var(--shade)) 0 0/100% calc(var(--box-top)*1px) no-repeat,linear-gradient(var(--shade),var(--shade)) 0 0/calc(var(--box-left)*1px) 100% no-repeat,linear-gradient(var(--shade),var(--shade)) 100% 0/calc(100% - (var(--box-left) + var(--box-size))*1px) 100% no-repeat,linear-gradient(var(--shade),var(--shade)) bottom/100% calc(100% - (var(--box-top) + var(--box-size))*1px) no-repeat; }
-    .scan-box { position:absolute; left:calc(var(--box-left)*1px); top:calc(var(--box-top)*1px); width:calc(var(--box-size)*1px); height:calc(var(--box-size)*1px); border:4px solid #fff; border-radius:8px; box-shadow:0 0 0 1px rgba(0,0,0,.28),0 0 20px rgba(34,184,255,.34); }
-    .scan-box::before { content:""; position:absolute; left:16px; right:16px; top:50%; height:2px; background:rgba(34,184,255,.75); }
-    .guide { position:absolute; left:16px; right:16px; bottom:20px; padding:14px; border:1px solid var(--line); border-radius:8px; background:rgba(16,26,37,.94); color:var(--text); font-size:16px; line-height:1.45; }
-    .review-preview { position:absolute; inset:0; z-index:4; width:100%; height:100%; object-fit:contain; background:#02060a; }
-    .camera-action,.review-actions { position:absolute; z-index:5; left:12px; right:12px; bottom:12px; }
-    .review-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-    button { min-height:56px; border:1px solid transparent; border-radius:8px; background:var(--accent); color:#062033; font:700 20px/1 inherit; cursor:pointer; }
-    button.secondary { background:var(--panel2); border-color:var(--line); color:var(--text); }
-    button:disabled { opacity:.55; cursor:wait; }
-    .message { margin:16px 0 10px; min-height:56px; display:flex; align-items:center; padding:12px 16px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--muted); font-size:17px; line-height:1.4; }
-    .message.ok { border-color:rgba(69,212,141,.65); color:var(--ok); }.message.warn { border-color:rgba(255,204,102,.65); color:var(--warn); }.message.bad { border-color:rgba(255,112,112,.65); color:var(--bad); }
-    .box-panel { padding:14px 16px; border:1px solid var(--line); border-radius:8px; background:var(--panel); }.box-label { color:var(--muted); font-size:14px; }.box-model { margin-top:4px; font-size:30px; font-weight:800; color:var(--accent); }
-    .hidden { display:none !important; } #work-canvas { display:none; }
-    @media (max-width:390px) { .app { padding:8px; } #camera,.camera-card { min-height:70vh; height:70vh; } }
-  </style>
+  <meta http-equiv="refresh" content="0; url=./" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>包貨掃描</title>
 </head>
 <body>
-  <main class="app">
-    <div class="topbar"><h1>員工包貨掃描</h1><div id="mode" class="pill">掃紙箱 QR</div></div>
-    <section id="camera-card" class="camera-card">
-      <video id="camera" playsinline muted autoplay></video>
-      <div id="scan-ui" class="scan-ui"><div class="scan-mask"></div><div class="scan-box"></div><div class="guide">把紙箱 QR Code 放進白框。</div></div>
-      <div id="photo-ui" class="photo-ui hidden"><div class="guide">請把寄件面籤完整放進畫面，按下方按鈕拍照。</div></div>
-      <img id="preview" class="review-preview hidden" alt="面籤照片預覽" />
-      <div id="camera-action" class="camera-action hidden"><button id="capture-btn" type="button">拍面籤照</button></div>
-      <div id="review-actions" class="review-actions hidden"><button id="retake-btn" class="secondary" type="button">重拍</button><button id="upload-btn" type="button">確定上傳</button></div>
-    </section>
-    <div id="message" class="message">正在啟動相機...</div>
-    <section id="box-panel" class="box-panel hidden"><div class="box-label">已掃描紙箱型號</div><div id="box-model" class="box-model">-</div></section>
-    <div id="scan-controls" class="hidden" style="margin-top:10px"><button id="start-btn" class="secondary hidden" type="button" style="width:100%">啟動相機</button></div>
-  </main>
-  <canvas id="work-canvas"></canvas>
-  <script>
-    const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzWWBupdwuar1EvO0qsXAehBawmt_TQk7faI9mYaNdBT6bWwFxqiEOJD5xwWWLVikWy/exec";
-    const ALLOWED_BOXES = new Set(["S60","S77","S105","S120","S150"]);
-    const cameraCard=document.getElementById("camera-card"), camera=document.getElementById("camera"), mode=document.getElementById("mode"), scanUi=document.getElementById("scan-ui"), photoUi=document.getElementById("photo-ui"), preview=document.getElementById("preview"), message=document.getElementById("message"), boxPanel=document.getElementById("box-panel"), boxModelEl=document.getElementById("box-model"), cameraAction=document.getElementById("camera-action"), reviewActions=document.getElementById("review-actions"), captureBtn=document.getElementById("capture-btn"), retakeBtn=document.getElementById("retake-btn"), uploadBtn=document.getElementById("upload-btn"), startBtn=document.getElementById("start-btn"), canvas=document.getElementById("work-canvas"), ctx=canvas.getContext("2d",{willReadFrequently:true});
-    let stream=null, scanTimer=null, currentMode="scan", boxModel="", photoData="", photoName="", isUploading=false, lastRejectAt=0;
-    captureBtn.addEventListener("click", captureFaceLabel); retakeBtn.addEventListener("click", retakePhoto); uploadBtn.addEventListener("click", submitPacking); startBtn.addEventListener("click",startCamera);
-    window.addEventListener("load",startCamera); window.addEventListener("resize",updateScanBox); window.addEventListener("pagehide",stopCamera); document.addEventListener("visibilitychange",function(){if(document.hidden)stopCamera();});
-    function showMessage(text,type=""){message.textContent=text;message.className="message"+(type?" "+type:"");}
-    async function startCamera(){ if(isUploading)return; stopScanLoop(); stopStream(); showMessage("正在啟動相機..."); startBtn.classList.add("hidden"); try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}},audio:false});camera.srcObject=stream;await camera.play();updateScanBox();if(currentMode==="scan"){startScanLoop();showMessage("請把紙箱 QR Code 放進白框");}else showMessage("請把寄件面籤放進畫面後拍照");}catch(error){console.error(error);startBtn.classList.remove("hidden");showMessage("相機啟動失敗。請確認權限，並用 HTTPS 開啟頁面。","bad");}}
-    function stopCamera(){stopScanLoop();stopStream();} function stopStream(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}camera.srcObject=null;}
-    function updateScanBox(){const r=cameraCard.getBoundingClientRect();if(!r.width||!r.height)return;const s=Math.round(Math.min(r.width*.56,r.height*.34,250));cameraCard.style.setProperty("--box-size",s);cameraCard.style.setProperty("--box-left",Math.round((r.width-s)/2));cameraCard.style.setProperty("--box-top",Math.round(r.height*.27));}
-    function startScanLoop(){stopScanLoop();if(currentMode==="scan")scanTimer=setInterval(scanBox,240);} function stopScanLoop(){if(scanTimer){clearInterval(scanTimer);scanTimer=null;}}
-    function scanBox(){if(currentMode!=="scan"||!camera.videoWidth||!camera.videoHeight||isUploading)return;const vr=camera.getBoundingClientRect(),cr=cameraCard.getBoundingClientRect(),css={left:parseFloat(cameraCard.style.getPropertyValue("--box-left"))||0,top:parseFloat(cameraCard.style.getPropertyValue("--box-top"))||0,size:parseFloat(cameraCard.style.getPropertyValue("--box-size"))||200};const vrRatio=camera.videoWidth/camera.videoHeight,er=vr.width/vr.height;let dw,dh,ox=0,oy=0;if(vrRatio>er){dh=vr.height;dw=dh*vrRatio;ox=(vr.width-dw)/2;}else{dw=vr.width;dh=dw/vrRatio;oy=(vr.height-dh)/2;}const left=css.left+cr.left-vr.left,top=css.top+cr.top-vr.top,sx=Math.max(0,Math.round((left-ox)*camera.videoWidth/dw)),sy=Math.max(0,Math.round((top-oy)*camera.videoHeight/dh)),sw=Math.min(camera.videoWidth-sx,Math.round(css.size*camera.videoWidth/dw)),sh=Math.min(camera.videoHeight-sy,Math.round(css.size*camera.videoHeight/dh));if(sw<=0||sh<=0)return;canvas.width=sw;canvas.height=sh;ctx.drawImage(camera,sx,sy,sw,sh,0,0,sw,sh);const code=jsQR(ctx.getImageData(0,0,sw,sh).data,sw,sh,{inversionAttempts:"dontInvert"});if(!code||!code.data)return;const value=String(code.data).trim().toUpperCase().replace(/^BOX[:\-/\s]*/,"").trim();if(!ALLOWED_BOXES.has(value)){if(Date.now()-lastRejectAt>1000){lastRejectAt=Date.now();showMessage("不是本次指定的紙箱 QR，請掃 S60、S77、S105、S120 或 S150。","warn");}return;}boxModel=value;boxModelEl.textContent=value;boxPanel.classList.remove("hidden");currentMode="photo";mode.textContent="拍面籤";scanUi.classList.add("hidden");photoUi.classList.remove("hidden");cameraAction.classList.remove("hidden");stopScanLoop();showMessage("已掃描 "+value+"，請拍寄件面籤。","ok");}
-    function captureFaceLabel(){if(isUploading)return;if(!camera.videoWidth){showMessage("相機尚未準備好，請稍等","warn");return;}let w=camera.videoWidth,h=camera.videoHeight,max=1280;if(w>=h&&w>max){h=Math.round(h*max/w);w=max;}else if(h>w&&h>max){w=Math.round(w*max/h);h=max;}canvas.width=w;canvas.height=h;ctx.drawImage(camera,0,0,w,h);photoData=canvas.toDataURL("image/jpeg",.76);photoName="packing-"+boxModel+"-"+Date.now()+".jpg";preview.src=photoData;preview.classList.remove("hidden");stopStream();cameraAction.classList.add("hidden");reviewActions.classList.remove("hidden");showMessage("請確認面籤清楚，再按確定上傳。","ok");}
-    async function retakePhoto(){if(isUploading)return;photoData="";photoName="";preview.src="";preview.classList.add("hidden");reviewActions.classList.add("hidden");cameraAction.classList.remove("hidden");await startCamera();}
-    async function submitPacking(){if(!boxModel||!photoData)return;isUploading=true;captureBtn.disabled=true;retakeBtn.disabled=true;uploadBtn.disabled=true;showMessage("正在上傳面籤...");const now=new Date(),params=new URLSearchParams();params.append("mode","packing");params.append("boxModel",boxModel);params.append("photoName",photoName);params.append("photoData",photoData);params.append("scanTime",now.toLocaleString("zh-TW",{hour12:false}));try{const response=await fetch(APPS_SCRIPT_URL,{method:"POST",body:params});const text=await response.text();if(response.ok&&!/error|fail|失敗/i.test(text)){showMessage(boxModel+" 面籤已上傳，準備掃下一箱。","ok");setTimeout(resetToScan,800);}else throw new Error(text);}catch(error){console.error(error);isUploading=false;captureBtn.disabled=false;retakeBtn.disabled=false;uploadBtn.disabled=false;showMessage("上傳失敗："+error.message,"bad");}}
-    async function resetToScan(){isUploading=false;boxModel="";photoData="";photoName="";preview.src="";preview.classList.add("hidden");boxPanel.classList.add("hidden");cameraAction.classList.add("hidden");reviewActions.classList.add("hidden");currentMode="scan";mode.textContent="掃紙箱 QR";scanUi.classList.remove("hidden");photoUi.classList.add("hidden");captureBtn.disabled=false;retakeBtn.disabled=false;uploadBtn.disabled=false;await startCamera();}
-  </script>
+  <p>正在開啟包貨掃描頁面… <a href="./">若沒有自動跳轉，請點這裡。</a></p>
 </body>
 </html>
