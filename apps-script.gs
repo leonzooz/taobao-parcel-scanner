@@ -27,7 +27,63 @@ function doPost(e) {
     return handleProductImageError_(params);
   }
 
+  if (params.mode === "packing") {
+    return handlePackingUpload_(params);
+  }
+
   return handleUpload_(e);
+}
+
+// 包貨面籤獨立存到「包貨面籤」分頁，不進行 OCR，也不影響商品入庫資料。
+function handlePackingUpload_(params) {
+  try {
+    var boxModel = String(params.boxModel || "").trim().toUpperCase();
+    var photoData = params.photoData || "";
+
+    if (!/^(S60|S77|S105|S120|S150)$/.test(boxModel)) {
+      throw new Error("紙箱型號不正確");
+    }
+
+    if (!photoData) {
+      throw new Error("缺少面籤照片");
+    }
+
+    var base64 = photoData.indexOf(",") !== -1 ? photoData.split(",")[1] : photoData;
+    var photoName = params.photoName || ("packing-" + boxModel + "-" + new Date().getTime() + ".jpg");
+    var decodedData = Utilities.base64Decode(base64);
+    var blob = Utilities.newBlob(decodedData, "image/jpeg", photoName);
+    var folders = DriveApp.getFoldersByName("PackingFaceLabels");
+    var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("PackingFaceLabels");
+    var file = folder.createFile(blob);
+
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+    var sheet = getPackingSheet_();
+    ensurePackingHeaders_(sheet);
+    var now = new Date();
+
+    sheet.appendRow([
+      now,
+      boxModel,
+      file.getUrl(),
+      file.getId(),
+      params.scanTime || now.toLocaleString("zh-TW", { hour12: false }),
+      "已拍面籤",
+      "packing"
+    ]);
+
+    return jsonOutput_({
+      status: "success",
+      boxModel: boxModel,
+      photoUrl: file.getUrl(),
+      photoFileId: file.getId()
+    }, params.callback || "");
+  } catch (error) {
+    return jsonOutput_({
+      status: "error",
+      message: error.toString()
+    }, params.callback || "");
+  }
 }
 
 function handleClassifyLabel_(params) {
@@ -883,6 +939,42 @@ function getDataSheet_() {
   }
 
   return sheet;
+}
+
+function getPackingSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("包貨面籤");
+
+  if (!sheet) {
+    sheet = ss.insertSheet("包貨面籤");
+  }
+
+  return sheet;
+}
+
+function ensurePackingHeaders_(sheet) {
+  var headers = [
+    "時間戳記",
+    "紙箱型號",
+    "面籤照片URL",
+    "面籤照片FileID",
+    "掃描時間",
+    "狀態",
+    "來源"
+  ];
+
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(headers);
+    return;
+  }
+
+  var existing = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), headers.length)).getValues()[0];
+
+  for (var i = 0; i < headers.length; i++) {
+    if (!existing[i]) {
+      sheet.getRange(1, i + 1).setValue(headers[i]);
+    }
+  }
 }
 
 function ensureHeaders_(sheet) {
