@@ -74,6 +74,8 @@ function handlePackingUpload_(params) {
       operatorName
     ]);
 
+    refreshPackingBoxStats_();
+
     return jsonOutput_({
       status: "success",
       boxModel: boxModel,
@@ -978,6 +980,73 @@ function ensurePackingHeaders_(sheet) {
       sheet.getRange(1, i + 1).setValue(headers[i]);
     }
   }
+}
+
+// 紙箱使用統計只讀取「包貨面籤」，不會混入淘寶商品掃描資料。
+function refreshPackingBoxStats() {
+  refreshPackingBoxStats_();
+}
+
+function refreshPackingBoxStats_() {
+  var packingSheet = getPackingSheet_();
+  ensurePackingHeaders_(packingSheet);
+  var models = ["S60", "S77", "S105", "S120", "S150"];
+  var stats = {};
+  var timezone = Session.getScriptTimeZone();
+  var today = Utilities.formatDate(new Date(), timezone, "yyyy-MM-dd");
+
+  for (var i = 0; i < models.length; i++) {
+    stats[models[i]] = { today: 0, total: 0, latest: "" };
+  }
+
+  var lastRow = packingSheet.getLastRow();
+
+  if (lastRow > 1) {
+    var values = packingSheet.getRange(2, 1, lastRow - 1, 2).getValues();
+
+    for (var row = 0; row < values.length; row++) {
+      var timestamp = values[row][0];
+      var model = String(values[row][1] || "").trim().toUpperCase();
+
+      if (!stats[model]) {
+        continue;
+      }
+
+      stats[model].total++;
+
+      if (timestamp instanceof Date) {
+        var entryDay = Utilities.formatDate(timestamp, timezone, "yyyy-MM-dd");
+
+        if (entryDay === today) {
+          stats[model].today++;
+        }
+
+        if (!stats[model].latest || timestamp.getTime() > stats[model].latest.getTime()) {
+          stats[model].latest = timestamp;
+        }
+      }
+    }
+  }
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var statsSheet = ss.getSheetByName("倉庫紙箱統計");
+
+  if (!statsSheet) {
+    statsSheet = ss.insertSheet("倉庫紙箱統計");
+  }
+
+  var output = [["統計日期", "紙箱型號", "今日使用數", "累計使用數", "最後上傳時間"]];
+
+  for (var j = 0; j < models.length; j++) {
+    var item = stats[models[j]];
+    output.push([today, models[j], item.today, item.total, item.latest || ""]);
+  }
+
+  statsSheet.clearContents();
+  statsSheet.getRange(1, 1, output.length, output[0].length).setValues(output);
+  statsSheet.getRange(1, 1, 1, output[0].length).setFontWeight("bold");
+  statsSheet.setFrozenRows(1);
+  statsSheet.autoResizeColumns(1, output[0].length);
 }
 
 function ensureHeaders_(sheet) {
