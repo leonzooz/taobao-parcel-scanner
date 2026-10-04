@@ -1,3 +1,13 @@
+// Add every customer here. Leave Anling IDs empty to continue using this script's bound Sheet and existing Drive folder.
+var PACKING_TENANTS = {
+  anling: {
+    companyName: "Anling",
+    spreadsheetId: "",
+    driveFolderId: "",
+    photoFolderName: "PackingFaceLabels"
+  }
+};
+
 function doGet(e) {
   var params = e && e.parameter ? e.parameter : {};
 
@@ -41,6 +51,7 @@ function doPost(e) {
 // 包貨面籤獨立存到「包貨面籤」分頁，不進行 OCR，也不影響商品入庫資料。
 function handlePackingUpload_(params) {
   try {
+    var tenant = getPackingTenant_(params.tenantId);
     var boxModel = String(params.boxModel || "").trim().toUpperCase();
     var photoData = params.photoData || "";
     var operatorName = String(params.operatorName || params.operator || "").trim() || "未填寫";
@@ -57,13 +68,12 @@ function handlePackingUpload_(params) {
     var photoName = params.photoName || ("packing-" + boxModel + "-" + new Date().getTime() + ".jpg");
     var decodedData = Utilities.base64Decode(base64);
     var blob = Utilities.newBlob(decodedData, "image/jpeg", photoName);
-    var folders = DriveApp.getFoldersByName("PackingFaceLabels");
-    var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder("PackingFaceLabels");
+    var folder = getPackingPhotoFolder_(tenant);
     var file = folder.createFile(blob);
 
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
-    var sheet = getPackingSheet_();
+    var sheet = getPackingSheet_(tenant);
     ensurePackingHeaders_(sheet);
     var now = new Date();
 
@@ -75,14 +85,16 @@ function handlePackingUpload_(params) {
       params.scanTime || now.toLocaleString("zh-TW", { hour12: false }),
       "已拍面籤",
       "packing",
-      operatorName
+      operatorName,
+      tenant.id
     ]);
 
-    refreshPackingBoxStats_();
+    refreshPackingBoxStats_(tenant);
 
     return jsonOutput_({
       status: "success",
       boxModel: boxModel,
+      tenantId: tenant.id,
       photoUrl: file.getUrl(),
       photoFileId: file.getId()
     }, params.callback || "");
@@ -949,8 +961,34 @@ function getDataSheet_() {
   return sheet;
 }
 
-function getPackingSheet_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+function getPackingTenant_(tenantId) {
+  var id = String(tenantId || "anling").trim().toLowerCase();
+  var tenant = PACKING_TENANTS[id];
+
+  if (!tenant) {
+    throw new Error("未設定的租戶：" + id);
+  }
+
+  tenant.id = id;
+  return tenant;
+}
+
+function getPackingSpreadsheet_(tenant) {
+  return tenant.spreadsheetId ? SpreadsheetApp.openById(tenant.spreadsheetId) : SpreadsheetApp.getActiveSpreadsheet();
+}
+
+function getPackingPhotoFolder_(tenant) {
+  if (tenant.driveFolderId) {
+    return DriveApp.getFolderById(tenant.driveFolderId);
+  }
+
+  var folderName = tenant.photoFolderName || ("PackingFaceLabels-" + tenant.id);
+  var folders = DriveApp.getFoldersByName(folderName);
+  return folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+}
+
+function getPackingSheet_(tenant) {
+  var ss = getPackingSpreadsheet_(tenant);
   var sheet = ss.getSheetByName("包貨面籤");
 
   if (!sheet) {
@@ -969,7 +1007,8 @@ function ensurePackingHeaders_(sheet) {
     "掃描時間",
     "狀態",
     "來源",
-    "上傳人"
+    "上傳人",
+    "租戶"
   ];
 
   if (sheet.getLastRow() === 0) {
@@ -988,11 +1027,11 @@ function ensurePackingHeaders_(sheet) {
 
 // 紙箱使用統計只讀取「包貨面籤」，不會混入淘寶商品掃描資料。
 function refreshPackingBoxStats() {
-  refreshPackingBoxStats_();
+  refreshPackingBoxStats_(getPackingTenant_("anling"));
 }
 
-function refreshPackingBoxStats_() {
-  var packingSheet = getPackingSheet_();
+function refreshPackingBoxStats_(tenant) {
+  var packingSheet = getPackingSheet_(tenant);
   ensurePackingHeaders_(packingSheet);
   var models = ["S60", "S77", "S105", "S120", "S150"];
   var stats = {};
@@ -1032,7 +1071,7 @@ function refreshPackingBoxStats_() {
     }
   }
 
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getPackingSpreadsheet_(tenant);
   var statsSheet = ss.getSheetByName("倉庫紙箱統計");
 
   if (!statsSheet) {
@@ -1055,9 +1094,10 @@ function refreshPackingBoxStats_() {
 
 function packingStats_(params) {
   try {
-    refreshPackingBoxStats_();
+    var tenant = getPackingTenant_(params.tenantId);
+    refreshPackingBoxStats_(tenant);
 
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = getPackingSpreadsheet_(tenant);
     var sheet = ss.getSheetByName("倉庫紙箱統計");
     var values = sheet.getDataRange().getValues();
     var items = [];
@@ -1074,6 +1114,7 @@ function packingStats_(params) {
 
     return jsonOutput_({
       status: "success",
+      tenantId: tenant.id,
       items: items
     }, params.callback || "");
   } catch (error) {
