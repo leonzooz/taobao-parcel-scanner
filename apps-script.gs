@@ -9,6 +9,10 @@ function doGet(e) {
     return pendingProductImages_(params);
   }
 
+  if (params.action === "packingStats") {
+    return packingStats_(params);
+  }
+
   return ContentService.createTextOutput("success");
 }
 
@@ -1047,6 +1051,37 @@ function refreshPackingBoxStats_() {
   statsSheet.getRange(1, 1, 1, output[0].length).setFontWeight("bold");
   statsSheet.setFrozenRows(1);
   statsSheet.autoResizeColumns(1, output[0].length);
+}
+
+function packingStats_(params) {
+  try {
+    refreshPackingBoxStats_();
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName("倉庫紙箱統計");
+    var values = sheet.getDataRange().getValues();
+    var items = [];
+
+    for (var i = 1; i < values.length; i++) {
+      items.push({
+        date: values[i][0] || "",
+        model: values[i][1] || "",
+        todayUsed: Number(values[i][2] || 0),
+        totalUsed: Number(values[i][3] || 0),
+        latestUpload: values[i][4] || ""
+      });
+    }
+
+    return jsonOutput_({
+      status: "success",
+      items: items
+    }, params.callback || "");
+  } catch (error) {
+    return jsonOutput_({
+      status: "error",
+      message: error.toString()
+    }, params.callback || "");
+  }
 }
 
 function ensureHeaders_(sheet) {
